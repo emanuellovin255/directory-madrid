@@ -117,9 +117,6 @@ function renderHeader(ctx) {
           <div class="mega mega-zonas"><div class="zonas-grid">${megaZonas}</div></div>
         </div>
         <a class="nav-link" href="/metro">Metro</a>
-        <form class="nav-search" action="/buscar" method="get" role="search">
-          <input type="search" name="q" placeholder="Buscar…" aria-label="Buscar" />
-        </form>
       </nav>
       <div class="header-actions">
         <a class="header-phone" href="tel:${attr(tel(SITE.phone))}">${icon('phone')}<span>${esc(SITE.phone)}</span></a>
@@ -145,7 +142,7 @@ function renderFooter(ctx) {
         <li><a href="/admin.html">Acceso profesionales</a></li>
       </ul></div>
     </div>
-    <div class="container footer-legal"><p>© ${new Date().getFullYear()} ${esc(SITE.name)} · Directorio demostrativo. Datos y empresas de ejemplo.</p></div>
+    <div class="container footer-legal"><p>© ${new Date().getFullYear()} ${esc(SITE.name)} · Directorio demostrativo. Datos y empresas de ejemplo.</p><p class="footer-credit">Fotos: Unsplash · Climatización: HomeSpot HQ (Flickr, CC BY 2.0) · Electricistas: Santeri Viinamäki (CC BY-SA 4.0).</p></div>
   </footer>`;
 }
 
@@ -458,9 +455,8 @@ function renderHome(ctx) {
 
   const catTiles = cats.map(c => `
       <a class="cat-tile" href="/${attr(c.slug)}">
-        <span class="cat-ic">${icon('tools')}</span>
+        <img src="/assets/img/cat-${attr(c.slug)}.jpg" alt="${attr(c.name)} en Madrid" loading="lazy" width="900" height="600">
         <span class="cat-name">${esc(c.name)}</span>
-        <span class="cat-sub">${esc(c.children.slice(0, 3).map(s => s.name).join(' · '))}</span>
       </a>`).join('');
 
   const body = `
@@ -488,6 +484,11 @@ function renderHome(ctx) {
             <select id="hsMetro"><option value="">Cualquiera</option>${metros.map(m => `<option value="${attr(m.slug)}">${esc(m.name)}</option>`).join('')}</select>
           </div>
           <button class="btn btn-primary hs-go" type="submit">Buscar</button>
+        </form>
+        <form class="searchbar hero-keyword" action="/buscar" method="get" role="search">
+          ${icon('search')}
+          <input type="search" name="q" placeholder="O busca por palabra clave: fontanero, cerrajero, Salamanca…" aria-label="Buscar por palabra clave">
+          <button class="btn btn-primary" type="submit">Buscar</button>
         </form>
         <div class="hero-stats">
           <div><b>${total}</b><span>Empresas</span></div>
