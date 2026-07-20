@@ -1,0 +1,9 @@
+node_modules/
+.env
+# Baza de date SQLite (se creează la rulare)
+server/data.db
+server/data.db-*
+# Poze încărcate (păstrăm doar folderul)
+uploads/*
+!uploads/.gitkeep
+.DS_Store
