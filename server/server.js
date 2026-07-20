@@ -32,7 +32,11 @@ const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-insecure-secret-change
 
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, '..', 'uploads');
-fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+
+/* Pe serverless (Vercel) discul e read-only și efemer → nu scriem fișiere:
+   imaginile se stochează inline (data URL) în DB, care persistă în Postgres. */
+const SERVERLESS = !!process.env.VERCEL;
+if (!SERVERLESS) { try { fs.mkdirSync(UPLOADS_DIR, { recursive: true }); } catch { /* ignoră */ } }
 
 /* Slug-uri rezervate care NU pot fi categorii (ar intra în conflict cu rutele). */
 const RESERVED_SLUGS = new Set([
@@ -41,8 +45,31 @@ const RESERVED_SLUGS = new Set([
 ]);
 function isReservedSlug(s) { return RESERVED_SLUGS.has(String(s || '').toLowerCase()); }
 
-/* ------------------------------ Seed ---------------------------------- */
-seedIfEmpty();
+/* --------------------- Bootstrap: Supabase + seed --------------------- */
+/* Rulează O DATĂ înainte de a servi cereri:
+   1) hidratează SQLite-ul in-memory din Postgres (dacă e configurat);
+   2) seed dacă e gol (Postgres gol sau fără Supabase);
+   3) dacă tocmai am făcut seed într-un Postgres gol → îl salvăm în Postgres. */
+const ready = (async () => {
+  let hydrated = 0;
+  try {
+    hydrated = await DB.initPersistence();
+  } catch (e) {
+    console.error('⚠️  Nu m-am putut conecta la Postgres (Supabase):', e.message);
+  }
+  seedIfEmpty();
+  if (DB.persistenceEnabled() && hydrated === 0) {
+    try { await DB.persist(); }
+    catch (e) { console.error('⚠️  Nu am putut salva seed-ul în Postgres:', e.message); }
+  }
+})();
+
+/* Salvează în Postgres după o scriere de admin, apoi răspunde. */
+async function saveAndRespond(res, payload, status) {
+  try { await DB.persist(); }
+  catch (e) { console.error('persist error:', e); return res.status(500).json({ error: 'No se pudo guardar en la base de datos' }); }
+  return res.status(status || 200).json(payload);
+}
 
 /* ------------------------------ App ----------------------------------- */
 const app = express();
@@ -56,8 +83,11 @@ app.use(cookieSession({
   maxAge: 30 * 24 * 60 * 60 * 1000,
 }));
 
+/* Așteaptă bootstrap-ul (hidratare Postgres + seed) înainte de orice cerere. */
+app.use((req, res, next) => { ready.then(() => next()).catch(next); });
+
 /* Fișiere statice (index:false → „/" e servit de SSR, nu de index.html). */
-app.use('/uploads', express.static(UPLOADS_DIR, { maxAge: '7d' }));
+if (!SERVERLESS) app.use('/uploads', express.static(UPLOADS_DIR, { maxAge: '7d' }));
 app.use(express.static(PUBLIC_DIR, { index: false }));
 
 /* ------------------------------ Helpers ------------------------------- */
@@ -97,24 +127,24 @@ app.get('/api/businesses/:id', (req, res) => {
   const b = DB.getBusiness(req.params.id);
   return b ? ok(res, b) : res.status(404).json({ error: 'No encontrada' });
 });
-app.post('/api/businesses', requireAuth, (req, res) => {
+app.post('/api/businesses', requireAuth, async (req, res) => {
   if (!req.body || !String(req.body.name || '').trim()) return res.status(400).json({ error: 'El nombre es obligatorio' });
-  ok(res.status(201), DB.insertBusiness(req.body));
+  return saveAndRespond(res, DB.insertBusiness(req.body), 201);
 });
-app.put('/api/businesses/:id', requireAuth, (req, res) => {
+app.put('/api/businesses/:id', requireAuth, async (req, res) => {
   const b = DB.updateBusiness(req.params.id, req.body || {});
-  return b ? ok(res, b) : res.status(404).json({ error: 'No encontrada' });
+  return b ? saveAndRespond(res, b) : res.status(404).json({ error: 'No encontrada' });
 });
-app.delete('/api/businesses/:id', requireAuth, (req, res) => {
-  return DB.removeBusiness(req.params.id) ? ok(res, { ok: true }) : res.status(404).json({ error: 'No encontrada' });
+app.delete('/api/businesses/:id', requireAuth, async (req, res) => {
+  return DB.removeBusiness(req.params.id) ? saveAndRespond(res, { ok: true }) : res.status(404).json({ error: 'No encontrada' });
 });
-app.post('/api/businesses/:id/featured', requireAuth, (req, res) => {
+app.post('/api/businesses/:id/featured', requireAuth, async (req, res) => {
   const b = DB.getBusiness(req.params.id);
   if (!b) return res.status(404).json({ error: 'No encontrada' });
-  ok(res, DB.setFeatured(req.params.id, req.body && req.body.featured != null ? req.body.featured : !b.featured));
+  return saveAndRespond(res, DB.setFeatured(req.params.id, req.body && req.body.featured != null ? req.body.featured : !b.featured));
 });
-app.post('/api/businesses/reset-demo', requireAuth, (req, res) => {
-  ok(res, { businesses: DB.replaceAll(DEMO_BUSINESSES) });
+app.post('/api/businesses/reset-demo', requireAuth, async (req, res) => {
+  return saveAndRespond(res, { businesses: DB.replaceAll(DEMO_BUSINESSES) });
 });
 
 /* ---------------------------- Taxonomía ------------------------------- */
@@ -123,51 +153,55 @@ app.get('/api/districts', (req, res) => ok(res, { districts: DB.listDistricts() 
 app.get('/api/districts/:id/neighborhoods', (req, res) => ok(res, { neighborhoods: DB.listNeighborhoods(Number(req.params.id)) }));
 app.get('/api/metros', (req, res) => ok(res, { metros: DB.listMetros() }));
 
-app.post('/api/categories', requireAuth, (req, res) => {
+app.post('/api/categories', requireAuth, async (req, res) => {
   const body = req.body || {};
   if (!String(body.name || '').trim()) return res.status(400).json({ error: 'El nombre es obligatorio' });
   const wanted = DB.slugify(body.slug || body.name);
   if (isReservedSlug(wanted)) return res.status(400).json({ error: 'Ese identificador (slug) está reservado, elige otro nombre.' });
-  try { ok(res.status(201), DB.insertCategory(body)); }
-  catch (e) { res.status(400).json({ error: e.message || 'No se pudo crear la categoría' }); }
+  let created;
+  try { created = DB.insertCategory(body); }
+  catch (e) { return res.status(400).json({ error: e.message || 'No se pudo crear la categoría' }); }
+  return saveAndRespond(res, created, 201);
 });
-app.put('/api/categories/:id', requireAuth, (req, res) => {
+app.put('/api/categories/:id', requireAuth, async (req, res) => {
   const body = req.body || {};
   if (body.slug != null && isReservedSlug(DB.slugify(body.slug))) return res.status(400).json({ error: 'Ese identificador (slug) está reservado.' });
   const c = DB.updateCategory(Number(req.params.id), body);
-  return c ? ok(res, c) : res.status(404).json({ error: 'No encontrada' });
+  return c ? saveAndRespond(res, c) : res.status(404).json({ error: 'No encontrada' });
 });
-app.delete('/api/categories/:id', requireAuth, (req, res) => {
-  return DB.removeCategory(Number(req.params.id)) ? ok(res, { ok: true }) : res.status(404).json({ error: 'No encontrada' });
+app.delete('/api/categories/:id', requireAuth, async (req, res) => {
+  return DB.removeCategory(Number(req.params.id)) ? saveAndRespond(res, { ok: true }) : res.status(404).json({ error: 'No encontrada' });
 });
 
-app.post('/api/metros', requireAuth, (req, res) => {
+app.post('/api/metros', requireAuth, async (req, res) => {
   if (!String((req.body || {}).name || '').trim()) return res.status(400).json({ error: 'El nombre es obligatorio' });
-  try { ok(res.status(201), DB.insertMetro(req.body)); }
-  catch (e) { res.status(400).json({ error: e.message || 'No se pudo crear la estación' }); }
+  let created;
+  try { created = DB.insertMetro(req.body); }
+  catch (e) { return res.status(400).json({ error: e.message || 'No se pudo crear la estación' }); }
+  return saveAndRespond(res, created, 201);
 });
-app.put('/api/metros/:id', requireAuth, (req, res) => {
+app.put('/api/metros/:id', requireAuth, async (req, res) => {
   const m = DB.updateMetro(Number(req.params.id), req.body || {});
-  return m ? ok(res, m) : res.status(404).json({ error: 'No encontrada' });
+  return m ? saveAndRespond(res, m) : res.status(404).json({ error: 'No encontrada' });
 });
-app.delete('/api/metros/:id', requireAuth, (req, res) => {
-  return DB.removeMetro(Number(req.params.id)) ? ok(res, { ok: true }) : res.status(404).json({ error: 'No encontrada' });
+app.delete('/api/metros/:id', requireAuth, async (req, res) => {
+  return DB.removeMetro(Number(req.params.id)) ? saveAndRespond(res, { ok: true }) : res.status(404).json({ error: 'No encontrada' });
 });
-app.post('/api/neighborhoods', requireAuth, (req, res) => {
+app.post('/api/neighborhoods', requireAuth, async (req, res) => {
   const body = req.body || {};
   const districtId = Number(body.districtId);
   if (!String(body.name || '').trim() || !districtId) return res.status(400).json({ error: 'Nombre y distrito son obligatorios' });
-  ok(res.status(201), DB.insertNeighborhood(String(body.name).trim(), body.slug, districtId));
+  return saveAndRespond(res, DB.insertNeighborhood(String(body.name).trim(), body.slug, districtId), 201);
 });
 
 /* --------------------------- Export / Import -------------------------- */
 app.get('/api/export', requireAuth, (req, res) => {
   ok(res, { version: 2, exportedAt: new Date().toISOString(), businesses: DB.listBusinesses() });
 });
-app.post('/api/import', requireAuth, (req, res) => {
+app.post('/api/import', requireAuth, async (req, res) => {
   const list = Array.isArray(req.body) ? req.body : (req.body && (req.body.businesses || req.body.clinics));
   if (!Array.isArray(list)) return res.status(400).json({ error: 'Formato no válido: falta "businesses"' });
-  ok(res, { businesses: DB.replaceAll(list) });
+  return saveAndRespond(res, { businesses: DB.replaceAll(list) });
 });
 
 /* ------------------------------ Upload -------------------------------- */
@@ -177,7 +211,10 @@ app.post('/api/upload', requireAuth, (req, res) => {
   if (!m) return res.status(400).json({ error: 'Imagen no válida' });
   const ext = m[2] === 'jpeg' ? 'jpg' : m[2];
   const buf = Buffer.from(m[3], 'base64');
-  if (buf.length > 3 * 1024 * 1024) return res.status(413).json({ error: 'Imagen demasiado grande (máx 3MB)' });
+  const cap = SERVERLESS ? 1.5 * 1024 * 1024 : 3 * 1024 * 1024;
+  if (buf.length > cap) return res.status(413).json({ error: `Imagen demasiado grande (máx ${SERVERLESS ? '1.5' : '3'}MB)` });
+  // Serverless: fără disc → returnăm data URL-ul; se stochează inline în DB.
+  if (SERVERLESS) return ok(res, { url: dataUrl });
   const name = Date.now().toString(36) + '-' + crypto.randomBytes(4).toString('hex') + '.' + ext;
   try { fs.writeFileSync(path.join(UPLOADS_DIR, name), buf); }
   catch (e) { return res.status(500).json({ error: 'No se pudo guardar la imagen' }); }
@@ -189,7 +226,7 @@ app.post('/api/extract', requireAuth, async (req, res) => {
   const url = req.body && String(req.body.url || '').trim();
   if (!url) return res.status(400).json({ error: 'Falta la URL' });
   try {
-    const result = await extractFromUrl(url, { uploadsDir: UPLOADS_DIR });
+    const result = await extractFromUrl(url, { uploadsDir: UPLOADS_DIR, inline: SERVERLESS });
     ok(res, result);
   } catch (e) {
     if (e.code === 'BAD_URL') return res.status(400).json({ error: e.message });
@@ -287,11 +324,20 @@ app.use((err, req, res, next) => {
   res.status(500).send('Error del servidor');
 });
 
-app.listen(PORT, () => {
-  const usingDefaults = ADMIN_PASSWORD === 'admin' || SESSION_SECRET === 'dev-insecure-secret-change-me';
-  console.log(`\n  ${R.SITE.name}`);
-  console.log(`  ▶  http://localhost:${PORT}`);
-  console.log(`  ▶  Admin: http://localhost:${PORT}/admin.html  (usuario: ${ADMIN_USERNAME})`);
-  if (usingDefaults) console.log(`  ⚠️  Usando credenciales/secreto por defecto — crea un archivo .env (ver .env.example).`);
-  console.log('');
-});
+/* Pe serverless (Vercel) exportăm app-ul ca handler — fără listen.
+   Local (npm start) pornim serverul HTTP normal. */
+if (!SERVERLESS && require.main === module) {
+  ready.then(() => {
+    app.listen(PORT, () => {
+      const usingDefaults = ADMIN_PASSWORD === 'admin' || SESSION_SECRET === 'dev-insecure-secret-change-me';
+      console.log(`\n  ${R.SITE.name}`);
+      console.log(`  ▶  http://localhost:${PORT}`);
+      console.log(`  ▶  Admin: http://localhost:${PORT}/admin.html  (usuario: ${ADMIN_USERNAME})`);
+      console.log(`  ▶  Persistencia: ${DB.persistenceEnabled() ? 'Supabase Postgres' : (process.env.VERCEL ? 'memoria (efímera)' : 'SQLite en disco')}`);
+      if (usingDefaults) console.log(`  ⚠️  Usando credenciales/secreto por defecto — crea un archivo .env (ver .env.example).`);
+      console.log('');
+    });
+  });
+}
+
+module.exports = app;

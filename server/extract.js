@@ -507,16 +507,21 @@ async function extractFromUrl(rawUrl, opts = {}) {
 
   detectZone(out, meta);
 
-  // descarcă logo → uploads/ (reutilizează pipeline-ul de imagini)
-  if (out.logo && opts.uploadsDir) {
+  // descarcă logo → uploads/ (disc) sau inline (data URL, pe serverless)
+  if (out.logo && (opts.uploadsDir || opts.inline)) {
     try {
       const abs = new URL(out.logo, origin).href;
       const bin = await fetchBinary(abs);
       const ext = bin && imageExt(bin.contentType, abs);
       if (bin && ext) {
-        const name = Date.now().toString(36) + '-' + crypto.randomBytes(4).toString('hex') + '.' + ext;
-        fs.writeFileSync(path.join(opts.uploadsDir, name), bin.buf);
-        out.photo = '/uploads/' + name;
+        if (opts.inline) {
+          // Serverless: fără disc → stocăm imaginea inline (persistă în DB).
+          out.photo = 'data:' + (bin.contentType || 'image/' + ext) + ';base64,' + bin.buf.toString('base64');
+        } else {
+          const name = Date.now().toString(36) + '-' + crypto.randomBytes(4).toString('hex') + '.' + ext;
+          fs.writeFileSync(path.join(opts.uploadsDir, name), bin.buf);
+          out.photo = '/uploads/' + name;
+        }
         meta.photo = meta.logo;
       } else notes.push('No se pudo descargar el logo (formato/tamaño).');
     } catch { notes.push('No se pudo descargar el logo.'); }

@@ -116,6 +116,24 @@ Fără `.env` → valori implicite (`admin` / `admin`), bune doar pentru test.
 - **Categorii/servicii**: se gestionează din **admin → Taxonomía** (nu mai sunt hardcodate). Sinonimele pentru importul din URL: `SERVICE_SYNONYMS` din `server/extract.js`.
 - **Firme demo**: `server/seed.js`.
 
-## ☁️ Deploy
+## ☁️ Deploy pe Vercel + Supabase
 
-Orice platformă cu Node (Render, Railway, Fly.io, VPS). Setează variabilele `.env` și atașează un **disc persistent** pentru `server/data.db` și `uploads/`. Rulează în spatele **HTTPS**.
+Aplicația rulează pe **Vercel** (serverless) cu persistență durabilă în **Supabase Postgres**.
+
+**Cum funcționează:** baza de lucru e SQLite `:memory:` (toată logica din `server/db.js`, sincronă). La fiecare cold start se hidratează din Postgres; după fiecare scriere de admin, starea se salvează înapoi în Postgres. Astfel serverul e „fără stare" și rulează pe funcții serverless. Vezi `server/pgstore.js`.
+
+Pașii:
+
+1. **Supabase** → creează un proiect. Din *Project Settings → Database → Connection string* copiază varianta **Transaction pooler** (portul `6543`).
+2. **Vercel** → *Project → Settings → Environment Variables*, adaugă:
+   - `DATABASE_URL` = connection string-ul de la pasul 1 (cu parola ta)
+   - `ADMIN_USERNAME`, `ADMIN_PASSWORD`
+   - `SESSION_SECRET` = `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
+3. **Deploy** (push pe `main` → Vercel build automat). La primul boot, aplicația creează singură tabelele (`CREATE TABLE IF NOT EXISTS`) și încarcă datele demo în Postgres. Schema de referință: `db/schema.sql`.
+
+Note:
+- **Fără `DATABASE_URL`**, site-ul tot pornește pe Vercel (datele din seed, în memorie), dar modificările din admin nu persistă între cold start-uri. Setează `DATABASE_URL` pentru persistență reală.
+- **Imaginile**: pe serverless nu există disc → se stochează inline (`data:` URL) în DB, deci persistă în Postgres.
+- **Local** (fără `DATABASE_URL`): folosește SQLite pe disc (`server/data.db`), exact ca înainte.
+
+Rulează întotdeauna în spatele **HTTPS** (Vercel îl oferă implicit).

@@ -7,10 +7,19 @@
 'use strict';
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
+const pgstore = require('./pgstore');
 
-const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'data.db');
+/* Modul de rulare:
+   • Cu DATABASE_URL (Supabase) SAU pe Vercel → SQLite `:memory:` (FS-ul e
+     read-only pe serverless). Persistența durabilă vine din Postgres.
+   • Local, fără Supabase → fișier pe disc (persistă între rulări).            */
+const HAS_PG = !!process.env.DATABASE_URL;
+const IN_MEMORY = HAS_PG || !!process.env.VERCEL;
+const DB_PATH = IN_MEMORY ? ':memory:' : (process.env.DB_PATH || path.join(__dirname, 'data.db'));
+
 const db = new DatabaseSync(DB_PATH);
-db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
+db.exec('PRAGMA foreign_keys = ON;');
+if (!IN_MEMORY) db.exec('PRAGMA journal_mode = WAL;');  // WAL n-are sens pe :memory:
 
 /* Pivot: tabelul dentar vechi nu mai există (date demo). */
 db.exec('DROP TABLE IF EXISTS clinics;');
@@ -477,8 +486,26 @@ function getStats() {
   };
 }
 
+/* ----------------------- Persistență Supabase ------------------------- */
+/* Se apelează O DATĂ la boot, ÎNAINTE de a servi cereri: pornește pool-ul
+   Postgres, creează schema și încarcă datele în SQLite-ul in-memory.
+   Returnează numărul de rânduri încărcate (0 → trebuie seed). */
+async function initPersistence(injectedPool) {
+  if (!pgstore.init(injectedPool)) return 0;   // fără DATABASE_URL → nimic de făcut
+  await pgstore.ensureSchema();
+  return pgstore.hydrate(db);
+}
+/* Rescrie starea curentă în Postgres. No-op dacă nu e configurat Supabase.
+   Se apelează (await) după fiecare scriere de admin. */
+async function persist() {
+  if (!pgstore.isEnabled()) return;
+  await pgstore.dump(db);
+}
+function persistenceEnabled() { return pgstore.isEnabled(); }
+
 module.exports = {
   db, DAYS, slugify, now,
+  initPersistence, persist, persistenceEnabled,
   // categories
   listCategories, getCategoryTree, getCategory, getCategoryBySlug, insertCategory, updateCategory, removeCategory, descendantCategoryIds, countCategories,
   // districts / neighborhoods
