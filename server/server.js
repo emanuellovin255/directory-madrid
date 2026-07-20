@@ -31,7 +31,7 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin';
 const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-insecure-secret-change-me';
 
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
-const UPLOADS_DIR = path.join(__dirname, '..', 'uploads');
+const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, '..', 'uploads');
 fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
 /* Slug-uri rezervate care NU pot fi categorii (ar intra în conflict cu rutele). */

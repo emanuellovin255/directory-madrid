@@ -1,0 +1,29 @@
+# Render blueprint — deploy cu disc persistent pentru SQLite + poze.
+# Import: Render Dashboard → New → Blueprint → alege acest repo.
+services:
+  - type: web
+    name: reformas-madrid
+    runtime: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # Persistență: baza de date și pozele stau pe discul montat la /data.
+      - key: DB_PATH
+        value: /data/data.db
+      - key: UPLOADS_DIR
+        value: /data/uploads
+      # Setează-le tu în dashboard (Secret) — NU le pune aici în clar:
+      - key: ADMIN_USERNAME
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: SESSION_SECRET
+        sync: false
+    disk:
+      name: data
+      mountPath: /data
+      sizeGB: 1
