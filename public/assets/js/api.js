@@ -19,19 +19,37 @@ DDM.api = (function () {
     return data;
   }
   const enc = encodeURIComponent;
+  function qs(params) {
+    const p = Object.entries(params || {}).filter(([, v]) => v != null && v !== '');
+    return p.length ? '?' + p.map(([k, v]) => enc(k) + '=' + enc(v)).join('&') : '';
+  }
 
   return {
-    // Clínicas
-    listClinics: () => req('GET', '/api/clinics').then(d => d.clinics),
-    getClinic: id => req('GET', '/api/clinics/' + enc(id)),
-    createClinic: c => req('POST', '/api/clinics', c),
-    updateClinic: (id, c) => req('PUT', '/api/clinics/' + enc(id), c),
-    deleteClinic: id => req('DELETE', '/api/clinics/' + enc(id)),
-    setFeatured: (id, val) => req('POST', '/api/clinics/' + enc(id) + '/featured', { featured: val }),
+    // Negocios
+    listBusinesses: (params) => req('GET', '/api/businesses' + qs(params)).then(d => d.businesses),
+    getBusiness: id => req('GET', '/api/businesses/' + enc(id)),
+    createBusiness: b => req('POST', '/api/businesses', b),
+    updateBusiness: (id, b) => req('PUT', '/api/businesses/' + enc(id), b),
+    deleteBusiness: id => req('DELETE', '/api/businesses/' + enc(id)),
+    setFeatured: (id, val) => req('POST', '/api/businesses/' + enc(id) + '/featured', { featured: val }),
+    resetDemo: () => req('POST', '/api/businesses/reset-demo'),
     exportData: () => req('GET', '/api/export'),
-    importData: clinics => req('POST', '/api/import', { clinics }),
-    resetDemo: () => req('POST', '/api/clinics/reset-demo'),
+    importData: businesses => req('POST', '/api/import', { businesses }),
     upload: dataUrl => req('POST', '/api/upload', { dataUrl }),
+    extractFromUrl: url => req('POST', '/api/extract', { url }),
+
+    // Taxonomía
+    categories: () => req('GET', '/api/categories'),
+    districts: () => req('GET', '/api/districts').then(d => d.districts),
+    neighborhoods: districtId => req('GET', '/api/districts/' + enc(districtId) + '/neighborhoods').then(d => d.neighborhoods),
+    metros: () => req('GET', '/api/metros').then(d => d.metros),
+    createCategory: c => req('POST', '/api/categories', c),
+    updateCategory: (id, c) => req('PUT', '/api/categories/' + enc(id), c),
+    deleteCategory: id => req('DELETE', '/api/categories/' + enc(id)),
+    createMetro: m => req('POST', '/api/metros', m),
+    updateMetro: (id, m) => req('PUT', '/api/metros/' + enc(id), m),
+    deleteMetro: id => req('DELETE', '/api/metros/' + enc(id)),
+    createNeighborhood: n => req('POST', '/api/neighborhoods', n),
 
     // Auth
     login: (username, password) => req('POST', '/api/auth/login', { username, password }),

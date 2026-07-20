@@ -32,7 +32,7 @@ Board cu task-urile proiectului. Fiecare are un fișier propriu cu obiectiv, fi�
 
 | # | Task | Status |
 |---|------|--------|
-| 19 | [Import automat din URL (crawler fără AI)](task-19-import-url-crawler.md) | ⬜ De făcut |
+| 19 | [Import automat din URL (crawler fără AI)](task-19-import-url-crawler.md) | ✅ Gata |
 
 ## Legendă
 - ✅ Gata — implementat

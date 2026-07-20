@@ -14,14 +14,6 @@ DDM.DAYS = [
 ];
 DDM.todayKey = () => ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'][new Date().getDay()];
 
-DDM.SERVICE_CATALOG = [
-  'Odontología general', 'Implantología', 'Ortodoncia invisible', 'Ortodoncia',
-  'Estética dental', 'Blanqueamiento', 'Carillas', 'Diseño de sonrisa',
-  'Periodoncia', 'Endodoncia', 'Odontopediatría', 'Prótesis dental',
-  'Cirugía oral', 'Higiene dental', 'Prevención', 'Odontología familiar',
-  'Urgencias dentales',
-];
-
 /* ------------------------------ Helpers ------------------------------- */
 DDM.esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
 DDM.attr = s => DDM.esc(s).replace(/"/g, '&quot;');
@@ -51,8 +43,8 @@ DDM.placeholderImage = name => {
   <rect width="800" height="600" fill="url(#g)"/>
   <circle cx="640" cy="120" r="230" fill="#ffffff" opacity="0.10"/>
   <circle cx="150" cy="520" r="180" fill="#ffffff" opacity="0.08"/>
-  <text x="400" y="330" font-family="-apple-system,Segoe UI,Roboto,sans-serif" font-size="180" font-weight="800" fill="#ffffff" text-anchor="middle" opacity="0.95">${DDM.initials(name)}</text>
-  <text x="400" y="410" font-family="-apple-system,Segoe UI,Roboto,sans-serif" font-size="30" font-weight="600" fill="#ffffff" text-anchor="middle" opacity="0.85" letter-spacing="4">CLÍNICA DENTAL</text>
+  <text x="400" y="330" font-family="-apple-system,Segoe UI,Roboto,sans-serif" font-size="180" font-weight="800" fill="#ffffff" text-anchor="middle" opacity="0.95">${DDM.esc(DDM.initials(name))}</text>
+  <text x="400" y="410" font-family="-apple-system,Segoe UI,Roboto,sans-serif" font-size="30" font-weight="600" fill="#ffffff" text-anchor="middle" opacity="0.85" letter-spacing="4">REFORMAS MADRID</text>
 </svg>`;
   return 'data:image/svg+xml,' + encodeURIComponent(svg);
 };

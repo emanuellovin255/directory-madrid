@@ -1,0 +1,179 @@
+{
+  "_comment": "División administrativa oficial de Madrid: 21 distritos y sus barrios. Slugs precalculados (sin acentos) para URLs SEO.",
+  "districts": [
+    { "slug": "centro", "name": "Centro", "barrios": [
+      { "slug": "palacio", "name": "Palacio" },
+      { "slug": "embajadores", "name": "Embajadores" },
+      { "slug": "cortes", "name": "Cortes" },
+      { "slug": "justicia", "name": "Justicia" },
+      { "slug": "universidad", "name": "Universidad" },
+      { "slug": "sol", "name": "Sol" }
+    ]},
+    { "slug": "arganzuela", "name": "Arganzuela", "barrios": [
+      { "slug": "imperial", "name": "Imperial" },
+      { "slug": "acacias", "name": "Acacias" },
+      { "slug": "la-chopera", "name": "La Chopera" },
+      { "slug": "legazpi", "name": "Legazpi" },
+      { "slug": "delicias", "name": "Delicias" },
+      { "slug": "palos-de-moguer", "name": "Palos de Moguer" },
+      { "slug": "atocha", "name": "Atocha" }
+    ]},
+    { "slug": "retiro", "name": "Retiro", "barrios": [
+      { "slug": "pacifico", "name": "Pacífico" },
+      { "slug": "adelfas", "name": "Adelfas" },
+      { "slug": "estrella", "name": "Estrella" },
+      { "slug": "ibiza", "name": "Ibiza" },
+      { "slug": "los-jeronimos", "name": "Los Jerónimos" },
+      { "slug": "nino-jesus", "name": "Niño Jesús" }
+    ]},
+    { "slug": "salamanca", "name": "Salamanca", "barrios": [
+      { "slug": "recoletos", "name": "Recoletos" },
+      { "slug": "goya", "name": "Goya" },
+      { "slug": "fuente-del-berro", "name": "Fuente del Berro" },
+      { "slug": "guindalera", "name": "Guindalera" },
+      { "slug": "lista", "name": "Lista" },
+      { "slug": "castellana", "name": "Castellana" }
+    ]},
+    { "slug": "chamartin", "name": "Chamartín", "barrios": [
+      { "slug": "el-viso", "name": "El Viso" },
+      { "slug": "prosperidad", "name": "Prosperidad" },
+      { "slug": "ciudad-jardin", "name": "Ciudad Jardín" },
+      { "slug": "hispanoamerica", "name": "Hispanoamérica" },
+      { "slug": "nueva-espana", "name": "Nueva España" },
+      { "slug": "castilla", "name": "Castilla" }
+    ]},
+    { "slug": "tetuan", "name": "Tetuán", "barrios": [
+      { "slug": "bellas-vistas", "name": "Bellas Vistas" },
+      { "slug": "cuatro-caminos", "name": "Cuatro Caminos" },
+      { "slug": "castillejos", "name": "Castillejos" },
+      { "slug": "almenara", "name": "Almenara" },
+      { "slug": "valdeacederas", "name": "Valdeacederas" },
+      { "slug": "berruguete", "name": "Berruguete" }
+    ]},
+    { "slug": "chamberi", "name": "Chamberí", "barrios": [
+      { "slug": "gaztambide", "name": "Gaztambide" },
+      { "slug": "arapiles", "name": "Arapiles" },
+      { "slug": "trafalgar", "name": "Trafalgar" },
+      { "slug": "almagro", "name": "Almagro" },
+      { "slug": "rios-rosas", "name": "Ríos Rosas" },
+      { "slug": "vallehermoso", "name": "Vallehermoso" }
+    ]},
+    { "slug": "fuencarral-el-pardo", "name": "Fuencarral-El Pardo", "barrios": [
+      { "slug": "el-pardo", "name": "El Pardo" },
+      { "slug": "fuentelarreina", "name": "Fuentelarreina" },
+      { "slug": "penagrande", "name": "Peñagrande" },
+      { "slug": "barrio-del-pilar", "name": "Barrio del Pilar" },
+      { "slug": "la-paz", "name": "La Paz" },
+      { "slug": "valverde", "name": "Valverde" },
+      { "slug": "mirasierra", "name": "Mirasierra" },
+      { "slug": "el-goloso", "name": "El Goloso" }
+    ]},
+    { "slug": "moncloa-aravaca", "name": "Moncloa-Aravaca", "barrios": [
+      { "slug": "casa-de-campo", "name": "Casa de Campo" },
+      { "slug": "arguelles", "name": "Argüelles" },
+      { "slug": "ciudad-universitaria", "name": "Ciudad Universitaria" },
+      { "slug": "valdezarza", "name": "Valdezarza" },
+      { "slug": "valdemarin", "name": "Valdemarín" },
+      { "slug": "el-plantio", "name": "El Plantío" },
+      { "slug": "aravaca", "name": "Aravaca" }
+    ]},
+    { "slug": "latina", "name": "Latina", "barrios": [
+      { "slug": "los-carmenes", "name": "Los Cármenes" },
+      { "slug": "puerta-del-angel", "name": "Puerta del Ángel" },
+      { "slug": "lucero", "name": "Lucero" },
+      { "slug": "aluche", "name": "Aluche" },
+      { "slug": "las-aguilas", "name": "Las Águilas" },
+      { "slug": "campamento", "name": "Campamento" },
+      { "slug": "cuatro-vientos", "name": "Cuatro Vientos" }
+    ]},
+    { "slug": "carabanchel", "name": "Carabanchel", "barrios": [
+      { "slug": "comillas", "name": "Comillas" },
+      { "slug": "opanel", "name": "Opañel" },
+      { "slug": "san-isidro", "name": "San Isidro" },
+      { "slug": "vista-alegre", "name": "Vista Alegre" },
+      { "slug": "puerta-bonita", "name": "Puerta Bonita" },
+      { "slug": "buenavista", "name": "Buenavista" },
+      { "slug": "abrantes", "name": "Abrantes" }
+    ]},
+    { "slug": "usera", "name": "Usera", "barrios": [
+      { "slug": "orcasitas", "name": "Orcasitas" },
+      { "slug": "orcasur", "name": "Orcasur" },
+      { "slug": "san-fermin", "name": "San Fermín" },
+      { "slug": "almendrales", "name": "Almendrales" },
+      { "slug": "moscardo", "name": "Moscardó" },
+      { "slug": "zofio", "name": "Zofío" },
+      { "slug": "pradolongo", "name": "Pradolongo" }
+    ]},
+    { "slug": "puente-de-vallecas", "name": "Puente de Vallecas", "barrios": [
+      { "slug": "entrevias", "name": "Entrevías" },
+      { "slug": "san-diego", "name": "San Diego" },
+      { "slug": "palomeras-bajas", "name": "Palomeras Bajas" },
+      { "slug": "palomeras-sureste", "name": "Palomeras Sureste" },
+      { "slug": "portazgo", "name": "Portazgo" },
+      { "slug": "numancia", "name": "Numancia" }
+    ]},
+    { "slug": "moratalaz", "name": "Moratalaz", "barrios": [
+      { "slug": "pavones", "name": "Pavones" },
+      { "slug": "horcajo", "name": "Horcajo" },
+      { "slug": "marroquina", "name": "Marroquina" },
+      { "slug": "media-legua", "name": "Media Legua" },
+      { "slug": "fontarron", "name": "Fontarrón" },
+      { "slug": "vinateros", "name": "Vinateros" }
+    ]},
+    { "slug": "ciudad-lineal", "name": "Ciudad Lineal", "barrios": [
+      { "slug": "ventas", "name": "Ventas" },
+      { "slug": "pueblo-nuevo", "name": "Pueblo Nuevo" },
+      { "slug": "quintana", "name": "Quintana" },
+      { "slug": "concepcion", "name": "Concepción" },
+      { "slug": "san-pascual", "name": "San Pascual" },
+      { "slug": "san-juan-bautista", "name": "San Juan Bautista" },
+      { "slug": "colina", "name": "Colina" },
+      { "slug": "atalaya", "name": "Atalaya" },
+      { "slug": "costillares", "name": "Costillares" }
+    ]},
+    { "slug": "hortaleza", "name": "Hortaleza", "barrios": [
+      { "slug": "palomas", "name": "Palomas" },
+      { "slug": "valdefuentes", "name": "Valdefuentes" },
+      { "slug": "canillas", "name": "Canillas" },
+      { "slug": "pinar-del-rey", "name": "Pinar del Rey" },
+      { "slug": "apostol-santiago", "name": "Apóstol Santiago" },
+      { "slug": "piovera", "name": "Piovera" }
+    ]},
+    { "slug": "villaverde", "name": "Villaverde", "barrios": [
+      { "slug": "san-andres", "name": "San Andrés" },
+      { "slug": "san-cristobal", "name": "San Cristóbal" },
+      { "slug": "butarque", "name": "Butarque" },
+      { "slug": "los-rosales", "name": "Los Rosales" },
+      { "slug": "los-angeles", "name": "Los Ángeles" }
+    ]},
+    { "slug": "villa-de-vallecas", "name": "Villa de Vallecas", "barrios": [
+      { "slug": "casco-historico-de-vallecas", "name": "Casco Histórico de Vallecas" },
+      { "slug": "santa-eugenia", "name": "Santa Eugenia" },
+      { "slug": "ensanche-de-vallecas", "name": "Ensanche de Vallecas" }
+    ]},
+    { "slug": "vicalvaro", "name": "Vicálvaro", "barrios": [
+      { "slug": "casco-historico-de-vicalvaro", "name": "Casco Histórico de Vicálvaro" },
+      { "slug": "ambroz", "name": "Ambroz" },
+      { "slug": "valdebernardo", "name": "Valdebernardo" },
+      { "slug": "valderrivas", "name": "Valderrivas" },
+      { "slug": "el-canaveral", "name": "El Cañaveral" }
+    ]},
+    { "slug": "san-blas-canillejas", "name": "San Blas-Canillejas", "barrios": [
+      { "slug": "simancas", "name": "Simancas" },
+      { "slug": "hellin", "name": "Hellín" },
+      { "slug": "amposta", "name": "Amposta" },
+      { "slug": "arcos", "name": "Arcos" },
+      { "slug": "rosas", "name": "Rosas" },
+      { "slug": "rejas", "name": "Rejas" },
+      { "slug": "canillejas", "name": "Canillejas" },
+      { "slug": "salvador", "name": "El Salvador" }
+    ]},
+    { "slug": "barajas", "name": "Barajas", "barrios": [
+      { "slug": "alameda-de-osuna", "name": "Alameda de Osuna" },
+      { "slug": "aeropuerto", "name": "Aeropuerto" },
+      { "slug": "casco-historico-de-barajas", "name": "Casco Histórico de Barajas" },
+      { "slug": "timon", "name": "Timón" },
+      { "slug": "corralejos", "name": "Corralejos" }
+    ]}
+  ]
+}

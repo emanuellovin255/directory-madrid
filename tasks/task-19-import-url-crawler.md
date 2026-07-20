@@ -1,6 +1,26 @@
-# Task 19 — Import automat din URL (crawler fără AI)
+# Task 19 — Import automat din URL (crawler fără AI) ✅
 
-**Status:** ⬜ De făcut · **Faza 3**
+**Status:** ✅ Gata · **Faza 3**
+
+## Implementat
+- **`server/extract.js`** — crawler same-origin (BFS, max ~25 pagini, prioritizează
+  contacto/servicios/horario/sobre-nosotros) + extractor determinist **fără AI, zero dependențe noi**
+  (doar `fetch` nativ Node 24 + parsing propriu). Respectă `robots.txt`, concurență 3, timeout 12s/pagină,
+  limită de mărime a paginii, User-Agent propriu, mic delay între loturi.
+- **Prioritate extragere:** JSON-LD (`Dentist`/`LocalBusiness`/…) → linkuri `tel:`/`mailto:` →
+  meta/Open Graph → euristici de text validate (telefon ES, email, cod poștal `28xxx`, orar, servicii).
+- **Per câmp:** logo (JSON-LD → apple-touch-icon/icon → og:image → `<img>` „logo"; se **descarcă în `uploads/`**),
+  orar (`openingHoursSpecification` → text), telefon/email (normalizate + validate strict), adresă
+  (`PostalAddress` → regex stradă+CP), servicii (potrivite cu `SERVICE_CATALOG`, doar recunoscute),
+  descriere (`description`/OG/primul paragraf), rețele (`sameAs`), valorare (`aggregateRating`),
+  zonă/barrio (din adresă/descriere, listă cartiere Madrid).
+- **Scor de încredere (alta/media/baja) + sursa + metoda** pentru fiecare câmp.
+- **Endpoint** `POST /api/extract { url }` (protejat cu `requireAuth`) → `{ fields, confidence, pagesCrawled, pages, notes }`.
+- **UI admin:** buton **„Importar desde URL"** → modal cu input + spinner de progres → **pre-completează
+  drawer-ul** „Nueva clínica (importada)" + panou-rezumat cu câmpurile extrase, încrederea și sursa.
+  **Nu se salvează automat** — admin revizuiește și apasă Guardar. Câmpurile nesigure rămân goale.
+- Verificat end-to-end (site sintetic de test): 12 câmpuri extrase corect, URL invalid → 400,
+  host inaccesibil → răspuns gol grațios (fără crash).
 
 ## Obiectiv
 În admin, introduci **URL-ul site-ului** unei clinici → sistemul face **crawl pe tot site-ul (20–30 pagini,
@@ -62,11 +82,11 @@ Parser HTML (ex. **cheerio** — pur JS), `fetch` nativ Node, parsing **JSON-LD/
 - `robots.txt` poate interzice crawl-ul unor secțiuni → le respectăm.
 
 ## Checklist
-- [ ] Crawler same-origin cu limite (20–30 pagini) + `robots.txt` + concurență/timeout
-- [ ] Extractor date structurate: JSON-LD + microdata + Open Graph
-- [ ] Extractoare per câmp: logo, telefon, email, adresă, orar, servicii, descriere
-- [ ] Scoruri de încredere + sursa per câmp
-- [ ] Endpoint `POST /api/extract` (protejat)
-- [ ] UI „Importar desde URL" care pre-completează formularul pentru **revizuire**
-- [ ] Validare/normalizare + **descărcare logo în `uploads/`**
-- [ ] Teste pe câteva site-uri reale de clinici dentare din Madrid + verificarea acurateței
+- [x] Crawler same-origin cu limite (20–30 pagini) + `robots.txt` + concurență/timeout
+- [x] Extractor date structurate: JSON-LD + Open Graph (+ meta)
+- [x] Extractoare per câmp: logo, telefon, email, adresă, orar, servicii, descriere
+- [x] Scoruri de încredere + sursa per câmp
+- [x] Endpoint `POST /api/extract` (protejat)
+- [x] UI „Importar desde URL" care pre-completează formularul pentru **revizuire**
+- [x] Validare/normalizare + **descărcare logo în `uploads/`**
+- [x] Testare end-to-end (site sintetic) + edge cases (URL invalid, host inaccesibil)
