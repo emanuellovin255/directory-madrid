@@ -579,7 +579,7 @@ function renderHome(ctx) {
 
   const inlineData = {
     categories: cats.map(c => ({ slug: c.slug, name: c.name })),
-    districts: districts.map(d => ({ slug: d.slug, name: d.name, barrios: DB.listNeighborhoods(d.id).map(b => ({ slug: b.slug, name: b.name })) })),
+    districts: districts.map(d => ({ slug: d.slug, name: d.name, kind: d.kind, barrios: DB.listNeighborhoods(d.id).map(b => ({ slug: b.slug, name: b.name })) })),
     metros: metros.map(m => ({ slug: m.slug, name: m.name })),
   };
 
@@ -607,7 +607,7 @@ function renderHome(ctx) {
           </div>
           <div class="hs-field">
             <label>Barrio</label>
-            <select id="hsBarrio" disabled><option value="">Selecciona distrito</option></select>
+            <select id="hsBarrio" disabled><option value="">Elige zona primero</option></select>
           </div>
           <div class="hs-field">
             <label>Metro</label>

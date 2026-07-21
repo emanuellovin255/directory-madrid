@@ -1,0 +1,565 @@
+{
+ "_comment": "Barrios/zonas reales de los principales municipios de la Comunidad de Madrid, por municipio. Los municipios rurales pequeños (p. ej. Sierra Norte) no tienen barrios: el municipio es la unidad.",
+ "barrios": {
+  "mostoles": [
+   {
+    "slug": "centro",
+    "name": "Centro"
+   },
+   {
+    "slug": "norte-universidad",
+    "name": "Norte Universidad"
+   },
+   {
+    "slug": "parque-coimbra",
+    "name": "Parque Coimbra"
+   },
+   {
+    "slug": "el-soto",
+    "name": "El Soto"
+   },
+   {
+    "slug": "villafontana",
+    "name": "Villafontana"
+   },
+   {
+    "slug": "los-rosales",
+    "name": "Los Rosales"
+   },
+   {
+    "slug": "estoril",
+    "name": "Estoril"
+   }
+  ],
+  "alcorcon": [
+   {
+    "slug": "centro",
+    "name": "Centro"
+   },
+   {
+    "slug": "parque-lisboa",
+    "name": "Parque Lisboa"
+   },
+   {
+    "slug": "san-jose-de-valderas",
+    "name": "San José de Valderas"
+   },
+   {
+    "slug": "parque-oeste",
+    "name": "Parque Oeste"
+   },
+   {
+    "slug": "ensanche-sur",
+    "name": "Ensanche Sur"
+   },
+   {
+    "slug": "las-retamas",
+    "name": "Las Retamas"
+   }
+  ],
+  "fuenlabrada": [
+   {
+    "slug": "centro",
+    "name": "Centro"
+   },
+   {
+    "slug": "loranca",
+    "name": "Loranca"
+   },
+   {
+    "slug": "el-naranjo",
+    "name": "El Naranjo"
+   },
+   {
+    "slug": "la-serna",
+    "name": "La Serna"
+   },
+   {
+    "slug": "el-vivero",
+    "name": "El Vivero"
+   },
+   {
+    "slug": "miraflores",
+    "name": "Miraflores"
+   }
+  ],
+  "leganes": [
+   {
+    "slug": "centro",
+    "name": "Centro"
+   },
+   {
+    "slug": "zarzaquemada",
+    "name": "Zarzaquemada"
+   },
+   {
+    "slug": "san-nicasio",
+    "name": "San Nicasio"
+   },
+   {
+    "slug": "leganes-norte",
+    "name": "Leganés Norte"
+   },
+   {
+    "slug": "la-fortuna",
+    "name": "La Fortuna"
+   },
+   {
+    "slug": "el-carrascal",
+    "name": "El Carrascal"
+   }
+  ],
+  "getafe": [
+   {
+    "slug": "centro",
+    "name": "Centro"
+   },
+   {
+    "slug": "getafe-norte",
+    "name": "Getafe Norte"
+   },
+   {
+    "slug": "las-margaritas",
+    "name": "Las Margaritas"
+   },
+   {
+    "slug": "el-bercial",
+    "name": "El Bercial"
+   },
+   {
+    "slug": "sector-3",
+    "name": "Sector 3"
+   },
+   {
+    "slug": "perales-del-rio",
+    "name": "Perales del Río"
+   },
+   {
+    "slug": "juan-de-la-cierva",
+    "name": "Juan de la Cierva"
+   }
+  ],
+  "parla": [
+   {
+    "slug": "centro",
+    "name": "Centro"
+   },
+   {
+    "slug": "parla-este",
+    "name": "Parla Este"
+   },
+   {
+    "slug": "las-americas",
+    "name": "Las Américas"
+   },
+   {
+    "slug": "san-roque",
+    "name": "San Roque"
+   }
+  ],
+  "pinto": [
+   {
+    "slug": "centro",
+    "name": "Centro"
+   },
+   {
+    "slug": "la-teneria",
+    "name": "La Tenería"
+   },
+   {
+    "slug": "parque-europa",
+    "name": "Parque Europa"
+   },
+   {
+    "slug": "los-angeles",
+    "name": "Los Ángeles"
+   }
+  ],
+  "valdemoro": [
+   {
+    "slug": "centro",
+    "name": "Centro"
+   },
+   {
+    "slug": "el-reston",
+    "name": "El Restón"
+   },
+   {
+    "slug": "la-villa",
+    "name": "La Villa"
+   },
+   {
+    "slug": "el-caracol",
+    "name": "El Caracol"
+   }
+  ],
+  "alcala-de-henares": [
+   {
+    "slug": "casco-historico",
+    "name": "Casco Histórico"
+   },
+   {
+    "slug": "ensanche",
+    "name": "Ensanche"
+   },
+   {
+    "slug": "la-garena",
+    "name": "La Garena"
+   },
+   {
+    "slug": "espartales",
+    "name": "Espartales"
+   },
+   {
+    "slug": "el-val",
+    "name": "El Val"
+   },
+   {
+    "slug": "reyes-catolicos",
+    "name": "Reyes Católicos"
+   },
+   {
+    "slug": "chorrillo",
+    "name": "Chorrillo"
+   }
+  ],
+  "torrejon-de-ardoz": [
+   {
+    "slug": "centro",
+    "name": "Centro"
+   },
+   {
+    "slug": "soto-del-henares",
+    "name": "Soto del Henares"
+   },
+   {
+    "slug": "parque-de-cataluna",
+    "name": "Parque de Cataluña"
+   },
+   {
+    "slug": "zarzuela",
+    "name": "Zarzuela"
+   },
+   {
+    "slug": "los-fresnos",
+    "name": "Los Fresnos"
+   }
+  ],
+  "coslada": [
+   {
+    "slug": "centro",
+    "name": "Centro"
+   },
+   {
+    "slug": "la-rambla",
+    "name": "La Rambla"
+   },
+   {
+    "slug": "el-jardin",
+    "name": "El Jardín"
+   },
+   {
+    "slug": "ciudad-70",
+    "name": "Ciudad 70"
+   },
+   {
+    "slug": "valleaguado",
+    "name": "Valleaguado"
+   }
+  ],
+  "san-fernando-de-henares": [
+   {
+    "slug": "centro",
+    "name": "Centro"
+   },
+   {
+    "slug": "la-rivota",
+    "name": "La Rivota"
+   },
+   {
+    "slug": "los-alperchines",
+    "name": "Los Alperchines"
+   },
+   {
+    "slug": "parque-henares",
+    "name": "Parque Henares"
+   }
+  ],
+  "alcobendas": [
+   {
+    "slug": "centro",
+    "name": "Centro"
+   },
+   {
+    "slug": "la-moraleja",
+    "name": "La Moraleja"
+   },
+   {
+    "slug": "el-soto",
+    "name": "El Soto"
+   },
+   {
+    "slug": "valdelasfuentes",
+    "name": "Valdelasfuentes"
+   },
+   {
+    "slug": "la-chopera",
+    "name": "La Chopera"
+   }
+  ],
+  "san-sebastian-de-los-reyes": [
+   {
+    "slug": "centro",
+    "name": "Centro"
+   },
+   {
+    "slug": "dehesa-vieja",
+    "name": "Dehesa Vieja"
+   },
+   {
+    "slug": "rosa-luxemburgo",
+    "name": "Rosa Luxemburgo"
+   },
+   {
+    "slug": "tempranales",
+    "name": "Tempranales"
+   }
+  ],
+  "tres-cantos": [
+   {
+    "slug": "sector-pueblo",
+    "name": "Sector Pueblo"
+   },
+   {
+    "slug": "sector-oficios",
+    "name": "Sector Oficios"
+   },
+   {
+    "slug": "sector-descubridores",
+    "name": "Sector Descubridores"
+   },
+   {
+    "slug": "nuevo-tres-cantos",
+    "name": "Nuevo Tres Cantos"
+   }
+  ],
+  "colmenar-viejo": [
+   {
+    "slug": "centro",
+    "name": "Centro"
+   },
+   {
+    "slug": "la-estacion",
+    "name": "La Estación"
+   },
+   {
+    "slug": "los-rosales",
+    "name": "Los Rosales"
+   }
+  ],
+  "pozuelo-de-alarcon": [
+   {
+    "slug": "centro",
+    "name": "Centro"
+   },
+   {
+    "slug": "la-estacion",
+    "name": "La Estación"
+   },
+   {
+    "slug": "humera",
+    "name": "Húmera"
+   },
+   {
+    "slug": "somosaguas",
+    "name": "Somosaguas"
+   },
+   {
+    "slug": "monteclaro",
+    "name": "Monteclaro"
+   }
+  ],
+  "majadahonda": [
+   {
+    "slug": "centro",
+    "name": "Centro"
+   },
+   {
+    "slug": "el-carralero",
+    "name": "El Carralero"
+   },
+   {
+    "slug": "roureda",
+    "name": "Roureda"
+   },
+   {
+    "slug": "los-satelites",
+    "name": "Los Satélites"
+   },
+   {
+    "slug": "valle-de-la-oliva",
+    "name": "Valle de la Oliva"
+   }
+  ],
+  "las-rozas-de-madrid": [
+   {
+    "slug": "centro",
+    "name": "Centro"
+   },
+   {
+    "slug": "las-matas",
+    "name": "Las Matas"
+   },
+   {
+    "slug": "el-cantizal",
+    "name": "El Cantizal"
+   },
+   {
+    "slug": "monte-rozas",
+    "name": "Monte Rozas"
+   }
+  ],
+  "boadilla-del-monte": [
+   {
+    "slug": "centro",
+    "name": "Centro"
+   },
+   {
+    "slug": "las-lomas",
+    "name": "Las Lomas"
+   },
+   {
+    "slug": "el-olivar",
+    "name": "El Olivar"
+   },
+   {
+    "slug": "bonanza",
+    "name": "Bonanza"
+   }
+  ],
+  "villaviciosa-de-odon": [
+   {
+    "slug": "centro",
+    "name": "Centro"
+   },
+   {
+    "slug": "el-bosque",
+    "name": "El Bosque"
+   },
+   {
+    "slug": "campodon",
+    "name": "Campodón"
+   }
+  ],
+  "collado-villalba": [
+   {
+    "slug": "centro",
+    "name": "Centro"
+   },
+   {
+    "slug": "estacion",
+    "name": "Estación"
+   },
+   {
+    "slug": "los-negrales",
+    "name": "Los Negrales"
+   },
+   {
+    "slug": "la-chopera",
+    "name": "La Chopera"
+   }
+  ],
+  "galapagar": [
+   {
+    "slug": "centro",
+    "name": "Centro"
+   },
+   {
+    "slug": "la-navata",
+    "name": "La Navata"
+   },
+   {
+    "slug": "parquelagos",
+    "name": "Parquelagos"
+   }
+  ],
+  "torrelodones": [
+   {
+    "slug": "pueblo",
+    "name": "Pueblo"
+   },
+   {
+    "slug": "colonia",
+    "name": "Colonia"
+   },
+   {
+    "slug": "los-penascales",
+    "name": "Los Peñascales"
+   }
+  ],
+  "san-lorenzo-de-el-escorial": [
+   {
+    "slug": "centro",
+    "name": "Centro"
+   },
+   {
+    "slug": "los-arroyos",
+    "name": "Los Arroyos"
+   }
+  ],
+  "rivas-vaciamadrid": [
+   {
+    "slug": "rivas-centro",
+    "name": "Rivas Centro"
+   },
+   {
+    "slug": "covibar",
+    "name": "Covibar"
+   },
+   {
+    "slug": "pablo-iglesias",
+    "name": "Pablo Iglesias"
+   },
+   {
+    "slug": "la-luna",
+    "name": "La Luna"
+   },
+   {
+    "slug": "rivas-urbanizaciones",
+    "name": "Rivas Urbanizaciones"
+   }
+  ],
+  "arganda-del-rey": [
+   {
+    "slug": "centro",
+    "name": "Centro"
+   },
+   {
+    "slug": "la-poveda",
+    "name": "La Poveda"
+   }
+  ],
+  "aranjuez": [
+   {
+    "slug": "centro",
+    "name": "Centro"
+   },
+   {
+    "slug": "las-olivas",
+    "name": "Las Olivas"
+   },
+   {
+    "slug": "vergel",
+    "name": "Vergel"
+   },
+   {
+    "slug": "foso-moreras",
+    "name": "Foso-Moreras"
+   },
+   {
+    "slug": "nuevo-aranjuez",
+    "name": "Nuevo Aranjuez"
+   }
+  ]
+ }
+}

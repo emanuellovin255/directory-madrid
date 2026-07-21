@@ -39,7 +39,8 @@
     selDistrict.addEventListener('change', function () {
       var dist = (RM.districts || []).filter(function (d) { return d.slug === selDistrict.value; })[0];
       var hasBarrios = !!(dist && dist.barrios && dist.barrios.length);
-      var opts = '<option value="">Todo el distrito</option>';
+      var whole = dist && dist.kind === 'municipio' ? 'Todo el municipio' : 'Todo el distrito';
+      var opts = '<option value="">' + whole + '</option>';
       if (hasBarrios) opts += dist.barrios.map(function (b) { return '<option value="' + esc(b.slug) + '">' + esc(b.name) + '</option>'; }).join('');
       selBarrio.innerHTML = opts;
       selBarrio.disabled = !hasBarrios;

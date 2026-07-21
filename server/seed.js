@@ -9,6 +9,7 @@
 const DB = require('./db');
 const GEO = require('./data/madrid-geo.json');
 const MUNIS = require('./data/madrid-municipios.json');
+const BARRIOS = require('./data/madrid-barrios.json').barrios;   // { municipioSlug: [{slug,name}] }
 
 /* --------------------------- Categorii ------------------------------- */
 const CATEGORIES = [
@@ -288,12 +289,17 @@ function ensureCategories() {
 function ensureMunicipios() {
   let changed = 0;
   MUNIS.municipios.forEach((m, i) => {
-    if (!DB.getDistrictBySlug(m.slug)) {
-      DB.insertDistrict(m.name, m.slug, 100 + i);
-      changed++;
-    }
+    let dist = DB.getDistrictBySlug(m.slug);
+    if (!dist) { dist = DB.insertDistrict(m.name, m.slug, 100 + i); changed++; }
+    // Barrios reales de los municipios principales (los pequeños no tienen).
+    (BARRIOS[m.slug] || []).forEach(b => {
+      if (!DB.getNeighborhoodBySlug(dist.id, b.slug)) {
+        DB.insertNeighborhood(b.name, b.slug, dist.id);
+        changed++;
+      }
+    });
   });
-  if (changed) console.log(`  ↳ Municipios de la Comunidad de Madrid añadidos (${changed})`);
+  if (changed) console.log(`  ↳ Municipios/barrios de la Comunidad de Madrid sincronizados (${changed})`);
   return changed;
 }
 
