@@ -61,6 +61,36 @@ const CATEGORIES = [
       { slug: 'puertas-acorazadas', name: 'Puertas acorazadas' },
     ],
   },
+  {
+    slug: 'control-de-plagas', name: 'Control de plagas', icon: 'control-de-plagas',
+    intro: 'Empresas de control de plagas en Madrid: desinsectación, desratización y desinfección para hogares, comunidades y locales. Compara profesionales por distrito, barrio y estación de metro.',
+    children: [
+      { slug: 'desinsectacion', name: 'Desinsectación' },
+      { slug: 'desratizacion', name: 'Desratización' },
+      { slug: 'control-termitas', name: 'Control de termitas' },
+      { slug: 'desinfeccion', name: 'Desinfección' },
+    ],
+  },
+  {
+    slug: 'mudanzas', name: 'Mudanzas', icon: 'mudanzas',
+    intro: 'Empresas de mudanzas en Madrid: mudanzas locales y nacionales, guardamuebles y montaje de muebles. Encuentra una empresa de mudanzas cerca de tu barrio o estación de metro.',
+    children: [
+      { slug: 'mudanzas-locales', name: 'Mudanzas locales' },
+      { slug: 'mudanzas-nacionales', name: 'Mudanzas nacionales' },
+      { slug: 'guardamuebles', name: 'Guardamuebles' },
+      { slug: 'montaje-muebles', name: 'Montaje de muebles' },
+    ],
+  },
+  {
+    slug: 'talleres', name: 'Talleres', icon: 'talleres',
+    intro: 'Talleres en Madrid: mecánica, chapa y pintura, neumáticos y electricidad del automóvil. Localiza un taller de confianza por zona o estación de metro.',
+    children: [
+      { slug: 'talleres-mecanicos', name: 'Talleres mecánicos' },
+      { slug: 'chapa-y-pintura', name: 'Chapa y pintura' },
+      { slug: 'neumaticos', name: 'Neumáticos' },
+      { slug: 'electricidad-automovil', name: 'Electricidad del automóvil' },
+    ],
+  },
 ];
 
 /* ----------------------- Metrou (set cheie) -------------------------- */
@@ -217,6 +247,37 @@ function seedCategoriesIfEmpty() {
   console.log(`  ↳ Sembradas ${CATEGORIES.length} categorías de servicios`);
   return true;
 }
+/* Idempotent: se asigură că toate categoriile din CATEGORIES există și au
+   ordinea corectă. Rulează la fiecare boot (și pe DB deja populate: SQLite pe
+   disc, Supabase). Adaugă doar ce lipsește; nu șterge nimic. Returnează
+   numărul de modificări (inserări + reordonări) → apelantul decide dacă
+   trebuie să persiste în Postgres. */
+function ensureCategories() {
+  let changed = 0;
+  CATEGORIES.forEach((c, i) => {
+    let parent = DB.getCategoryBySlug(c.slug);
+    if (!parent) {
+      parent = DB.insertCategory({ slug: c.slug, name: c.name, icon: c.icon, intro: c.intro, display_order: i, in_nav: 1 });
+      changed++;
+    } else if (parent.display_order !== i) {
+      DB.updateCategory(parent.id, { display_order: i });
+      changed++;
+    }
+    (c.children || []).forEach((s, j) => {
+      const existing = DB.getCategoryBySlug(s.slug);
+      if (!existing) {
+        DB.insertCategory({ slug: s.slug, name: s.name, parentId: parent.id, display_order: j, in_nav: 1 });
+        changed++;
+      } else if (existing.display_order !== j) {
+        DB.updateCategory(existing.id, { display_order: j });
+        changed++;
+      }
+    });
+  });
+  if (changed) console.log(`  ↳ Categorías sincronizadas (${changed} cambios)`);
+  return changed;
+}
+
 function seedMetrosIfEmpty() {
   if (DB.countMetros() > 0) return false;
   METROS.forEach(m => DB.insertMetro({ name: m.name, lines: m.lines }));
@@ -262,4 +323,4 @@ function seedIfEmpty() {
   return { seededGeo, seededCategories, seededMetros, seededBusinesses };
 }
 
-module.exports = { seedIfEmpty, DEMO_BUSINESSES, CATEGORIES, METROS };
+module.exports = { seedIfEmpty, ensureCategories, DEMO_BUSINESSES, CATEGORIES, METROS };

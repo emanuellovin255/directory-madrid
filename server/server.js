@@ -21,7 +21,7 @@ const cookieSession = require('cookie-session');
 })(path.join(__dirname, '..', '.env'));
 
 const DB = require('./db');
-const { seedIfEmpty, DEMO_BUSINESSES } = require('./seed');
+const { seedIfEmpty, ensureCategories, DEMO_BUSINESSES } = require('./seed');
 const { extractFromUrl } = require('./extract');
 const R = require('./render');
 
@@ -42,6 +42,7 @@ if (!SERVERLESS) { try { fs.mkdirSync(UPLOADS_DIR, { recursive: true }); } catch
 const RESERVED_SLUGS = new Set([
   'api', 'uploads', 'assets', 'admin', 'login', 'admin.html', 'login.html', 'index.html',
   'negocio', 'zona', 'metro', 'buscar', 'sitemap.xml', 'robots.txt', 'favicon.ico',
+  'aviso-legal', 'privacidad', 'cookies', 'condiciones',
 ]);
 function isReservedSlug(s) { return RESERVED_SLUGS.has(String(s || '').toLowerCase()); }
 
@@ -58,7 +59,9 @@ const ready = (async () => {
     console.error('⚠️  Nu m-am putut conecta la Postgres (Supabase):', e.message);
   }
   seedIfEmpty();
-  if (DB.persistenceEnabled() && hydrated === 0) {
+  // Migrare idempotentă: adaugă categoriile noi pe DB deja populate (disc/Supabase).
+  const catsChanged = ensureCategories();
+  if (DB.persistenceEnabled() && (hydrated === 0 || catsChanged > 0)) {
     try { await DB.persist(); }
     catch (e) { console.error('⚠️  Nu am putut salva seed-ul în Postgres:', e.message); }
   }
@@ -258,6 +261,13 @@ app.get('/', (req, res) => sendHtml(res, R.renderHome(ctx(req))));
 app.get('/sitemap.xml', (req, res) => res.type('application/xml').send(R.renderSitemap(ctx(req))));
 app.get('/robots.txt', (req, res) => res.type('text/plain').send(R.renderRobots(ctx(req))));
 app.get('/buscar', (req, res) => sendHtml(res, R.renderSearch(ctx(req), req.query.q)));
+
+/* Páginas legales (RGPD / LSSI-CE) */
+app.get('/:doc(aviso-legal|privacidad|cookies|condiciones)', (req, res, next) => {
+  const html = R.renderLegal(ctx(req), req.params.doc);
+  if (!html) return next();
+  sendHtml(res, html);
+});
 
 app.get('/metro', (req, res) => sendHtml(res, R.renderMetroIndex(ctx(req))));
 app.get('/metro/:estacion', (req, res, next) => {

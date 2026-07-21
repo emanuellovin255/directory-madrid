@@ -38,6 +38,33 @@ function bizPhoto(b) {
   return svgPlaceholder(b.name, primary ? primary.name : SITE.name);
 }
 
+/* Imagen de la tarjeta de servicio (home). Las categorías clásicas usan foto
+   real (/assets/img/cat-<slug>.jpg); las nuevas usan una ilustración SVG
+   embebida y coherente con el diseño (sin ficheros binarios). */
+const CAT_PHOTO = new Set(['reformas', 'fontaneros', 'electricistas', 'climatizacion', 'cerrajeros']);
+const CAT_ART = {
+  'control-de-plagas': {
+    c1: '#16a34a', c2: '#065f46',
+    icon: `<ellipse cx="450" cy="258" rx="56" ry="80"/><circle cx="450" cy="170" r="30"/><path d="M436 150 Q420 120 402 120 M464 150 Q480 120 498 120"/><path d="M394 216 L344 194 M392 258 L340 258 M394 300 L344 322"/><path d="M506 216 L556 194 M508 258 L560 258 M506 300 L556 322"/><path d="M450 190 L450 330"/>`,
+  },
+  'mudanzas': {
+    c1: '#2563eb', c2: '#1e3a8a',
+    icon: `<rect x="330" y="196" width="168" height="118" rx="10"/><path d="M498 232 L548 232 L576 268 L576 314 L498 314 Z"/><circle cx="396" cy="332" r="26"/><circle cx="532" cy="332" r="26"/>`,
+  },
+  'talleres': {
+    c1: '#ea580c', c2: '#7c2d12',
+    icon: `<circle cx="450" cy="250" r="62"/><circle cx="450" cy="250" r="22"/><path d="M512 250 L532 250 M493.8 293.8 L508 308 M450 312 L450 332 M406.2 293.8 L392 308 M388 250 L368 250 M406.2 206.2 L392 192 M450 188 L450 168 M493.8 206.2 L508 192"/>`,
+  },
+};
+function catIllustration(slug) {
+  const a = CAT_ART[slug] || { c1: '#c8102e', c2: '#7a0a1c', icon: '' };
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 600"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${a.c1}"/><stop offset="1" stop-color="${a.c2}"/></linearGradient><radialGradient id="h" cx="0.3" cy="0.24" r="0.9"><stop offset="0" stop-color="#ffffff" stop-opacity="0.20"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></radialGradient></defs><rect width="900" height="600" fill="url(#g)"/><rect width="900" height="600" fill="url(#h)"/><g fill="none" stroke="#ffffff" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" opacity="0.9">${a.icon}</g></svg>`;
+  return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+}
+function catTileImg(slug) {
+  return CAT_PHOTO.has(slug) ? `/assets/img/cat-${slug}.jpg` : catIllustration(slug);
+}
+
 /* --------------------------- Componente ------------------------------ */
 function icon(name) {
   const P = {
@@ -48,8 +75,15 @@ function icon(name) {
     metro: '<circle cx="12" cy="12" r="8"/><path d="M8 15l2-6 2 3 2-3 2 6"/>',
     tools: '<path d="M14.7 6.3a4 4 0 01-5.4 5.4L4 17l3 3 5.3-5.3a4 4 0 005.4-5.4l-2 2-2-.5-.5-2 2-2z"/>',
     search: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>',
+    shield: '<path d="M12 3l7 3v5c0 4.4-3 7.6-7 9-4-1.4-7-4.6-7-9V6z"/><path d="M9 12l2 2 4-4"/>',
+    doc: '<path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4"/><path d="M9.5 12h6M9.5 15.5h6"/>',
+    clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+    lock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/>',
   };
   return `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${P[name] || ''}</svg>`;
+}
+function trustBadge(ic, title, sub) {
+  return `<div class="trust-badge"><span class="trust-ic">${icon(ic)}</span><span class="trust-txt"><b>${esc(title)}</b><small>${esc(sub)}</small></span></div>`;
 }
 
 function businessCard(ctx, b) {
@@ -142,8 +176,37 @@ function renderFooter(ctx) {
         <li><a href="/admin.html">Acceso profesionales</a></li>
       </ul></div>
     </div>
-    <div class="container footer-legal"><p>© ${new Date().getFullYear()} ${esc(SITE.name)} · Directorio demostrativo. Datos y empresas de ejemplo.</p><p class="footer-credit">Fotos: Unsplash · Climatización: HomeSpot HQ (Flickr, CC BY 2.0) · Electricistas: Santeri Viinamäki (CC BY-SA 4.0).</p></div>
+    <div class="container footer-trust">
+      ${trustBadge('shield', 'Profesionales verificados', 'Datos y contacto revisados')}
+      ${trustBadge('doc', 'Presupuesto sin compromiso', 'Solicítalo sin coste')}
+      ${trustBadge('clock', 'Respuesta 24–48 h', 'Atención rápida en Madrid')}
+      ${trustBadge('lock', 'Cumplimiento del RGPD', 'Tus datos protegidos')}
+    </div>
+    <div class="container footer-legal">
+      <p>© ${new Date().getFullYear()} ${esc(SITE.name)}. Todos los derechos reservados.</p>
+      <nav class="footer-legal-links" aria-label="Legal">
+        <a href="/aviso-legal">Aviso legal</a>
+        <a href="/privacidad">Política de privacidad</a>
+        <a href="/cookies">Política de cookies</a>
+        <a href="/condiciones">Condiciones de uso</a>
+      </nav>
+    </div>
   </footer>`;
+}
+
+/* Banner de consentimiento de cookies (RGPD). Privacy-first: solo se guarda
+   la decisión del usuario; sin cookies analíticas hasta que las acepte. */
+function cookieBanner() {
+  return `<div class="cookie-banner" id="cookieBanner" role="dialog" aria-live="polite" aria-label="Aviso de cookies" hidden>
+    <div class="container cookie-inner">
+      <p class="cookie-txt">Usamos cookies propias necesarias para el funcionamiento del sitio y, con tu permiso, cookies analíticas para mejorarlo. Consulta la <a href="/cookies">Política de cookies</a>.</p>
+      <div class="cookie-actions">
+        <button type="button" class="btn btn-ghost btn-sm" data-cookie="reject">Rechazar</button>
+        <button type="button" class="btn btn-primary btn-sm" data-cookie="accept">Aceptar</button>
+      </div>
+    </div>
+  </div>
+  <script>(function(){try{var K='rm_cookie_consent',b=document.getElementById('cookieBanner');if(!b)return;if(!localStorage.getItem(K))b.hidden=false;b.addEventListener('click',function(e){var t=e.target.closest('[data-cookie]');if(!t)return;localStorage.setItem(K,t.getAttribute('data-cookie'));b.hidden=true;});}catch(e){}})();</script>`;
 }
 
 /* ------------------------------ Layout ------------------------------- */
@@ -174,6 +237,7 @@ ${jsonLd.map(j => `<script type="application/ld+json">${JSON.stringify(j)}</scri
 ${renderHeader(ctx)}
 <main id="contenido">${page.body}</main>
 ${renderFooter(ctx)}
+${cookieBanner()}
 ${page.inlineData ? `<script>window.__RM__=${JSON.stringify(page.inlineData)};</script>` : ''}
 <script src="/assets/js/ui.js"></script>
 <script src="/assets/js/api.js"></script>
@@ -455,7 +519,7 @@ function renderHome(ctx) {
 
   const catTiles = cats.map(c => `
       <a class="cat-tile" href="/${attr(c.slug)}">
-        <img src="/assets/img/cat-${attr(c.slug)}.jpg" alt="${attr(c.name)} en Madrid" loading="lazy" width="900" height="600">
+        <img src="${attr(catTileImg(c.slug))}" alt="${attr(c.name)} en Madrid" loading="lazy" width="900" height="600">
         <span class="cat-name">${esc(c.name)}</span>
       </a>`).join('');
 
@@ -487,7 +551,7 @@ function renderHome(ctx) {
         </form>
         <form class="searchbar hero-keyword" action="/buscar" method="get" role="search">
           ${icon('search')}
-          <input type="search" name="q" placeholder="O busca por palabra clave: fontanero, cerrajero, Salamanca…" aria-label="Buscar por palabra clave">
+          <input type="search" name="q" placeholder="Busca: fontanero, cerrajero…" aria-label="Buscar por palabra clave">
           <button class="btn btn-primary" type="submit">Buscar</button>
         </form>
         <div class="hero-stats">
@@ -540,6 +604,89 @@ function renderSearch(ctx, q) {
   });
 }
 
+/* ----------------------------- Páginas legales ----------------------- */
+/* Datos del titular. El CUI (código fiscal) se puede fijar por .env
+   (LEGAL_NIF); si está vacío, simplemente no se muestra. */
+const LEGAL_ENTITY = {
+  razon: process.env.LEGAL_RAZON || 'Refluxe Loial SRL',
+  nif: process.env.LEGAL_NIF || '49608691',
+  domicilio: process.env.LEGAL_DOMICILIO || 'Bacău, Rumanía',
+};
+function waLink() { return 'https://wa.me/' + String(SITE.phone).replace(/\D/g, ''); }
+function legalDocs() {
+  const E = LEGAL_ENTITY;
+  const wa = waLink();
+  const nifPart = E.nif ? `, con código de identificación fiscal (CUI) ${esc(E.nif)}` : '';
+  const contacto = `WhatsApp <a href="${attr(wa)}" target="_blank" rel="noopener nofollow">${esc(SITE.phone)}</a> y teléfono <a href="tel:${attr(tel(SITE.phone))}">${esc(SITE.phone)}</a>`;
+  const titular = `<strong>${esc(E.razon)}</strong> (en adelante, «${esc(SITE.name)}»)${nifPart}, con domicilio en ${esc(E.domicilio)}, y contacto por ${contacto}`;
+  return {
+    'aviso-legal': {
+      title: `Aviso legal | ${SITE.name}`,
+      h1: 'Aviso legal',
+      description: 'Información legal del titular del sitio web conforme a la LSSI-CE.',
+      sections: [
+        ['1. Titular del sitio web', `<p>En cumplimiento de la Ley 34/2002, de Servicios de la Sociedad de la Información y de Comercio Electrónico (LSSI-CE), se informa de que el titular de este sitio web es ${titular}.</p>`],
+        ['2. Objeto', `<p>${esc(SITE.name)} es un directorio en línea que facilita el contacto entre usuarios y profesionales o empresas de reformas y servicios para el hogar en Madrid. ${esc(SITE.name)} no ejecuta directamente las obras ni los servicios anunciados: actúa únicamente como plataforma de intermediación e información.</p>`],
+        ['3. Condiciones de uso', `<p>El acceso a este sitio web es gratuito y atribuye la condición de usuario, que acepta las presentes condiciones. El usuario se compromete a hacer un uso adecuado de los contenidos y a no emplearlos para actividades ilícitas o contrarias a la buena fe.</p>`],
+        ['4. Propiedad intelectual e industrial', `<p>Los contenidos del sitio (textos, diseño, logotipos, código y demás elementos) son titularidad de ${esc(SITE.name)} o de terceros que han autorizado su uso, y están protegidos por la normativa de propiedad intelectual e industrial. Queda prohibida su reproducción sin autorización expresa.</p>`],
+        ['5. Responsabilidad', `<p>${esc(SITE.name)} no se responsabiliza de la veracidad, calidad o resultado de los servicios prestados por los profesionales y empresas listados, ni de los acuerdos que el usuario alcance con ellos. Recomendamos verificar la información y solicitar presupuesto por escrito antes de contratar.</p>`],
+        ['6. Legislación aplicable', `<p>Las presentes condiciones se rigen por la legislación española. Para la resolución de cualquier controversia, las partes se someten a los Juzgados y Tribunales de Madrid, salvo que la normativa de consumo disponga otro fuero.</p>`],
+      ],
+    },
+    'privacidad': {
+      title: `Política de privacidad | ${SITE.name}`,
+      h1: 'Política de privacidad',
+      description: 'Cómo tratamos tus datos personales conforme al RGPD y la LOPDGDD.',
+      sections: [
+        ['1. Responsable del tratamiento', `<p>El responsable del tratamiento de tus datos es ${titular}.</p>`],
+        ['2. Datos que tratamos y finalidad', `<p>Tratamos los datos de contacto que nos facilitas al comunicarte con nosotros o al solicitar presupuesto a un profesional (nombre, teléfono, correo electrónico y el contenido de tu consulta), así como datos de navegación. Los usamos para gestionar tu solicitud, ponerte en contacto con el profesional adecuado y para la analítica y mejora del sitio.</p>`],
+        ['3. Legitimación', `<p>La base legal es tu <em>consentimiento</em> al remitir una solicitud y el <em>interés legítimo</em> en mantener y mejorar el servicio.</p>`],
+        ['4. Conservación', `<p>Conservamos los datos durante el tiempo necesario para atender tu solicitud y, después, durante los plazos legalmente exigibles. Cuando dejen de ser necesarios, se suprimen de forma segura.</p>`],
+        ['5. Destinatarios', `<p>Tus datos podrán comunicarse al profesional o empresa al que solicites presupuesto y a los proveedores tecnológicos que prestan servicios de alojamiento e infraestructura, siempre con las debidas garantías. No se realizan transferencias internacionales sin garantías adecuadas.</p>`],
+        ['6. Tus derechos', `<p>Puedes ejercer tus derechos de acceso, rectificación, supresión, oposición, limitación y portabilidad contactando por WhatsApp al <a href="${attr(wa)}" target="_blank" rel="noopener nofollow">${esc(SITE.phone)}</a>, indicando el derecho que deseas ejercer. Si consideras que no hemos atendido correctamente tu solicitud, puedes reclamar ante la Agencia Española de Protección de Datos (<a href="https://www.aepd.es" target="_blank" rel="noopener nofollow">www.aepd.es</a>).</p>`],
+      ],
+    },
+    'cookies': {
+      title: `Política de cookies | ${SITE.name}`,
+      h1: 'Política de cookies',
+      description: 'Información sobre las cookies que utiliza este sitio web.',
+      sections: [
+        ['1. ¿Qué son las cookies?', `<p>Una cookie es un pequeño fichero que se descarga en tu dispositivo al acceder a determinadas páginas web y que permite, entre otras cosas, recordar tus preferencias o recopilar información estadística sobre la navegación.</p>`],
+        ['2. Cookies que utilizamos', `<p><strong>Cookies técnicas o necesarias:</strong> imprescindibles para el funcionamiento del sitio (por ejemplo, mantener la sesión o recordar tu decisión sobre las cookies). No requieren consentimiento.</p><p><strong>Cookies analíticas:</strong> nos ayudan a entender cómo se usa el sitio para mejorarlo. Solo se activan con tu consentimiento.</p>`],
+        ['3. Gestión de cookies', `<p>Puedes aceptar o rechazar las cookies no necesarias a través del aviso que aparece al entrar en el sitio. Además, puedes configurar o eliminar las cookies desde las opciones de tu navegador en cualquier momento.</p>`],
+      ],
+    },
+    'condiciones': {
+      title: `Condiciones de uso | ${SITE.name}`,
+      h1: 'Condiciones de uso',
+      description: 'Términos y condiciones de uso del directorio.',
+      sections: [
+        ['1. Aceptación', `<p>El uso de ${esc(SITE.name)} implica la aceptación plena de estas condiciones y del <a href="/aviso-legal">Aviso legal</a> y la <a href="/privacidad">Política de privacidad</a>.</p>`],
+        ['2. Uso del directorio', `<p>La información publicada tiene carácter orientativo. El usuario es responsable de verificar los datos de cada profesional y de acordar directamente con él las condiciones del servicio.</p>`],
+        ['3. Exención de responsabilidad', `<p>${esc(SITE.name)} no interviene en la contratación ni garantiza la disponibilidad, calidad o precio de los servicios ofrecidos por terceros, y no será responsable de los daños derivados de dicha relación.</p>`],
+        ['4. Modificaciones', `<p>${esc(SITE.name)} podrá modificar en cualquier momento estas condiciones, así como los contenidos y servicios del sitio, publicando la versión vigente en esta misma página.</p>`],
+      ],
+    },
+  };
+}
+function renderLegal(ctx, slug) {
+  const docs = legalDocs();
+  const doc = docs[slug];
+  if (!doc) return null;
+  const body = `<div class="container">
+      ${breadcrumb(ctx, [{ name: 'Inicio', href: '/' }, { name: doc.h1 }])}
+      <article class="legal">
+        <header class="page-head"><h1>${esc(doc.h1)}</h1><p class="page-count">Última actualización: ${new Date().toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' })}</p></header>
+        ${doc.sections.map(([h, html]) => `<section class="legal-section"><h2>${esc(h)}</h2>${html}</section>`).join('')}
+        <p class="legal-links">Consulta también: <a href="/aviso-legal">Aviso legal</a> · <a href="/privacidad">Política de privacidad</a> · <a href="/cookies">Política de cookies</a> · <a href="/condiciones">Condiciones de uso</a></p>
+      </article>
+    </div>`;
+  return renderLayout(ctx, {
+    title: doc.title, description: doc.description, canonical: abs(ctx, `/${slug}`), body,
+    jsonLd: [jsonLdBreadcrumb(ctx, [{ name: 'Inicio', href: '/' }, { name: doc.h1 }])],
+  });
+}
+
 function render404(ctx, message) {
   const body = `<div class="container"><div class="empty empty-404">
       <h1>Página no encontrada</h1>
@@ -554,6 +701,7 @@ function render404(ctx, message) {
 function renderSitemap(ctx) {
   const urls = ['/'];
   urls.push('/metro', '/buscar');
+  urls.push('/aviso-legal', '/privacidad', '/cookies', '/condiciones');
   const cats = DB.getCategoryTree();
   const districts = DB.listDistricts();
   const metros = DB.listMetros();
@@ -590,5 +738,5 @@ module.exports = {
   SITE,
   renderHome, renderCategory, renderDistrict, renderBarrio, renderCategoryMetro,
   renderZoneDistrict, renderZoneBarrio, renderMetroIndex, renderMetroHub,
-  renderBusiness, renderSearch, render404, renderSitemap, renderRobots,
+  renderBusiness, renderSearch, renderLegal, render404, renderSitemap, renderRobots,
 };
