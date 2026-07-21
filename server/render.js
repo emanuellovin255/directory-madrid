@@ -27,6 +27,11 @@ function abs(ctx, p) { return (ctx && ctx.origin ? ctx.origin : '') + p; }
 function tel(s) { return String(s || '').replace(/[^\d+]/g, ''); }
 function titleCase(s) { return String(s || ''); }
 
+/* Geo: distingue el distrito de la capital del municipio de la Comunidad, para
+   redactar el copy correcto ("en el distrito de Salamanca" vs "en Móstoles"). */
+function geoIn(d) { return d && d.kind === 'municipio' ? d.name : 'el distrito de ' + (d ? d.name : ''); }
+function zonaName(slug) { const z = (DB.ZONES || []).find(x => x.slug === slug); return z ? z.name : ''; }
+
 function svgPlaceholder(name, label) {
   const initials = String(name || '?').split(/\s+/).slice(0, 2).map(w => w[0] || '').join('').toUpperCase() || '?';
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="420"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#c8102e"/><stop offset="1" stop-color="#7a0a1c"/></linearGradient></defs><rect width="640" height="420" fill="url(#g)"/><text x="50%" y="46%" fill="rgba(255,255,255,.95)" font-family="Arial,Helvetica,sans-serif" font-size="120" font-weight="700" text-anchor="middle" dominant-baseline="middle">${esc(initials)}</text><text x="50%" y="73%" fill="rgba(255,255,255,.72)" font-family="Arial,Helvetica,sans-serif" font-size="24" letter-spacing="3" text-anchor="middle">${esc(String(label || SITE.name).toUpperCase())}</text></svg>`;
@@ -113,6 +118,13 @@ function chipRow(title, links) {
   if (!links.length) return '';
   return `<section class="linkset"><h2 class="linkset-title">${esc(title)}</h2><div class="chips">${links.map(l => `<a class="chip" href="${attr(l.href)}">${esc(l.name)}${l.count != null ? ` <b>${l.count}</b>` : ''}</a>`).join('')}</div></section>`;
 }
+/* Grupo de zona (home + índice /zonas): título enlazado + chips de lugares. */
+function zonaGroup(title, anchor, items, total) {
+  return `<div class="zona-group">
+      <h3 class="zona-group-title"><a href="/zonas#${attr(anchor)}">${esc(title)}</a> <span class="zona-count">${total}</span></h3>
+      <div class="chips">${items.map(x => `<a class="chip" href="/zona/${attr(x.slug)}">${esc(x.name)}</a>`).join('')}${total > items.length ? `<a class="chip chip-more" href="/zonas#${attr(anchor)}">+${total - items.length} más</a>` : ''}</div>
+    </div>`;
+}
 function breadcrumb(ctx, items) {
   return `<nav class="breadcrumb" aria-label="Ruta"><ol>${items.map(it => `<li>${it.href ? `<a href="${attr(it.href)}">${esc(it.name)}</a>` : `<span aria-current="page">${esc(it.name)}</span>`}</li>`).join('')}</ol></nav>`;
 }
@@ -126,14 +138,22 @@ function jsonLdItemList(ctx, businesses) {
 /* ------------------------ Header / Footer ---------------------------- */
 function renderHeader(ctx) {
   const cats = DB.getCategoryTree();
-  const districts = DB.listDistricts();
+  const distritos = DB.listDistritos();
+  const zones = DB.listZones();
   const flagship = cats[0] ? cats[0].slug : 'reformas';
   const megaServicios = cats.map(c => `
       <div class="mega-col">
         <a class="mega-head" href="/${attr(c.slug)}">${esc(c.name)}</a>
         <ul>${c.children.map(s => `<li><a href="/${attr(s.slug)}">${esc(s.name)}</a></li>`).join('')}</ul>
       </div>`).join('');
-  const megaZonas = districts.map(d => `<a href="/zona/${attr(d.slug)}">${esc(d.name)}</a>`).join('');
+  const CAP = 6;
+  const megaCol = (title, href, items, extra) => `
+      <div class="mega-col">
+        <a class="mega-head" href="${attr(href)}">${esc(title)}</a>
+        <ul>${items.map(it => `<li><a href="/zona/${attr(it.slug)}">${esc(it.name)}</a></li>`).join('')}${extra ? `<li><a class="mega-more" href="${attr(href)}">${esc(extra)}</a></li>` : ''}</ul>
+      </div>`;
+  const megaZonas = megaCol('Madrid capital', '/zonas#madrid', distritos.slice(0, CAP), distritos.length > CAP ? `+${distritos.length - CAP} distritos` : '')
+    + zones.map(z => megaCol(z.name, `/zonas#${z.slug}`, z.municipios.slice(0, CAP), z.municipios.length > CAP ? `+${z.municipios.length - CAP} municipios` : '')).join('');
   return `<header class="site-header">
     <div class="container header-inner">
       <a class="brand" href="/" aria-label="${attr(SITE.name)} — inicio">
@@ -147,8 +167,8 @@ function renderHeader(ctx) {
           <div class="mega"><div class="mega-grid">${megaServicios}</div></div>
         </div>
         <div class="nav-item has-mega">
-          <a class="nav-link" href="/zona/${attr(districts[0] ? districts[0].slug : 'centro')}" aria-haspopup="true">Zonas</a>
-          <div class="mega mega-zonas"><div class="zonas-grid">${megaZonas}</div></div>
+          <a class="nav-link" href="/zonas" aria-haspopup="true">Zonas</a>
+          <div class="mega mega-zonas"><div class="mega-grid">${megaZonas}</div><a class="mega-all" href="/zonas">Ver todas las zonas y los 179 municipios ${icon('arrow')}</a></div>
         </div>
         <a class="nav-link" href="/metro">Metro</a>
       </nav>
@@ -160,7 +180,7 @@ function renderHeader(ctx) {
 }
 function renderFooter(ctx) {
   const cats = DB.getCategoryTree();
-  const districts = DB.listDistricts().slice(0, 12);
+  const zones = DB.listZones();
   return `<footer class="site-footer">
     <div class="container footer-grid">
       <div class="footer-col footer-brand">
@@ -169,7 +189,11 @@ function renderFooter(ctx) {
         <a class="header-phone" href="tel:${attr(tel(SITE.phone))}">${icon('phone')}<span>${esc(SITE.phone)}</span></a>
       </div>
       <div class="footer-col"><h4>Servicios</h4><ul>${cats.map(c => `<li><a href="/${attr(c.slug)}">${esc(c.name)} en Madrid</a></li>`).join('')}</ul></div>
-      <div class="footer-col"><h4>Zonas</h4><ul>${districts.map(d => `<li><a href="/zona/${attr(d.slug)}">${esc(d.name)}</a></li>`).join('')}</ul></div>
+      <div class="footer-col"><h4>Zonas</h4><ul>
+        <li><a href="/zonas#madrid">Madrid capital</a></li>
+        ${zones.map(z => `<li><a href="/zonas#${attr(z.slug)}">${esc(z.name)}</a></li>`).join('')}
+        <li><a href="/zonas"><b>Ver los 179 municipios</b></a></li>
+      </ul></div>
       <div class="footer-col"><h4>Directorio</h4><ul>
         <li><a href="/metro">Buscar por metro</a></li>
         <li><a href="/buscar">Búsqueda</a></li>
@@ -270,12 +294,14 @@ function listingPage(ctx, opts) {
 
 function renderCategory(ctx, category) {
   const businesses = DB.listBusinesses({ categorySlug: category.slug });
-  const districts = DB.listDistricts();
+  const distritos = DB.listDistritos();
+  const zones = DB.listZones();
   const subs = DB.getCategory(category.id) && DB.getCategoryTree().find(c => c.id === category.id);
   const subChildren = subs ? subs.children : [];
   const keyMetros = DB.listMetros().slice(0, 10);
   const related = [
-    chipRow(`${category.name} por distrito`, districts.map(d => ({ name: d.name, href: `/${category.slug}/${d.slug}` }))),
+    chipRow(`${category.name} por distrito en Madrid capital`, distritos.map(d => ({ name: d.name, href: `/${category.slug}/${d.slug}` }))),
+    ...zones.map(z => chipRow(`${category.name} en ${z.name}`, z.municipios.map(m => ({ name: m.name, href: `/${category.slug}/${m.slug}` })))),
     chipRow(`${category.name} cerca del metro`, keyMetros.map(m => ({ name: m.name, href: `/${category.slug}/metro/${m.slug}` }))),
   ];
   const subchips = subChildren.length ? chipRow('Especialidades', subChildren.map(s => ({ name: s.name, href: `/${s.slug}` }))) : '';
@@ -297,16 +323,21 @@ function renderCategory(ctx, category) {
 function renderDistrict(ctx, category, district) {
   const businesses = DB.listBusinesses({ categorySlug: category.slug, districtSlug: district.slug });
   const barrios = DB.listNeighborhoods(district.id);
+  const isMuni = district.kind === 'municipio';
   const related = [
     chipRow(`${category.name} por barrio en ${district.name}`, barrios.map(b => ({ name: b.name, href: `/${category.slug}/${district.slug}/${b.slug}` }))),
-    chipRow(`${category.name} en otros distritos`, DB.listDistricts().filter(d => d.id !== district.id).slice(0, 12).map(d => ({ name: d.name, href: `/${category.slug}/${d.slug}` }))),
+    isMuni
+      ? chipRow(`${category.name} en otros municipios de ${zonaName(district.zona)}`, DB.listMunicipios().filter(d => d.zona === district.zona && d.id !== district.id).map(d => ({ name: d.name, href: `/${category.slug}/${d.slug}` })))
+      : chipRow(`${category.name} en otros distritos`, DB.listDistritos().filter(d => d.id !== district.id).map(d => ({ name: d.name, href: `/${category.slug}/${d.slug}` }))),
   ];
   return listingPage(ctx, {
     title: `${category.name} en ${district.name} (Madrid) | ${SITE.name}`,
-    description: `${category.name} en el distrito de ${district.name}, Madrid. Profesionales cercanos con opiniones y contacto directo, por barrios.`,
+    description: `${category.name} en ${geoIn(district)}, Comunidad de Madrid. Profesionales cercanos con opiniones y contacto directo${isMuni ? '' : ', por barrios'}.`,
     canonical: abs(ctx, `/${category.slug}/${district.slug}`),
     h1: `${category.name} en ${district.name}`,
-    intro: `Profesionales de ${category.name.toLowerCase()} en el distrito de ${district.name}. Elige tu barrio para afinar la búsqueda.`,
+    intro: isMuni
+      ? `Profesionales de ${category.name.toLowerCase()} en ${district.name}, en la zona ${zonaName(district.zona)} de la Comunidad de Madrid.`
+      : `Profesionales de ${category.name.toLowerCase()} en el distrito de ${district.name}. Elige tu barrio para afinar la búsqueda.`,
     crumbs: [{ name: 'Inicio', href: '/' }, { name: category.name, href: `/${category.slug}` }, { name: district.name }],
     businesses, related,
     emptyMsg: `Aún no hay ${category.name.toLowerCase()} listados en ${district.name}.`,
@@ -355,17 +386,22 @@ function renderZoneDistrict(ctx, district) {
   const businesses = DB.listBusinesses({ districtSlug: district.slug });
   const cats = DB.getCategoryTree();
   const barrios = DB.listNeighborhoods(district.id);
+  const isMuni = district.kind === 'municipio';
   const related = [
     chipRow(`Servicios en ${district.name}`, cats.map(c => ({ name: c.name, href: `/${c.slug}/${district.slug}` }))),
     chipRow(`Barrios de ${district.name}`, barrios.map(b => ({ name: b.name, href: `/zona/${district.slug}/${b.slug}` }))),
+    isMuni ? chipRow(`Otros municipios de ${zonaName(district.zona)}`, DB.listMunicipios().filter(d => d.zona === district.zona && d.id !== district.id).map(d => ({ name: d.name, href: `/zona/${d.slug}` }))) : '',
   ];
+  const crumbs = [{ name: 'Inicio', href: '/' }, { name: 'Zonas', href: '/zonas' }];
+  if (isMuni) crumbs.push({ name: zonaName(district.zona), href: `/zonas#${district.zona}` });
+  crumbs.push({ name: district.name });
   return listingPage(ctx, {
     title: `Empresas y profesionales en ${district.name} (Madrid) | ${SITE.name}`,
-    description: `Directorio de fontaneros, electricistas, cerrajeros, climatización y reformas en el distrito de ${district.name}, Madrid.`,
+    description: `Directorio de reformas, fontaneros, electricistas, cerrajeros y climatización en ${geoIn(district)}, Comunidad de Madrid.`,
     canonical: abs(ctx, `/zona/${district.slug}`),
     h1: `Profesionales en ${district.name}`,
-    intro: `Todos los servicios para el hogar en el distrito de ${district.name}: reformas, fontaneros, electricistas, climatización y cerrajeros.`,
-    crumbs: [{ name: 'Inicio', href: '/' }, { name: 'Zonas', href: `/zona/${district.slug}` }, { name: district.name }],
+    intro: `Todos los servicios para el hogar en ${geoIn(district)}: reformas, fontaneros, electricistas, climatización y cerrajeros.`,
+    crumbs,
     businesses, related,
     emptyMsg: `Aún no hay empresas listadas en ${district.name}.`,
   });
@@ -387,6 +423,34 @@ function renderZoneBarrio(ctx, district, barrio) {
     crumbs: [{ name: 'Inicio', href: '/' }, { name: district.name, href: `/zona/${district.slug}` }, { name: barrio.name }],
     businesses, related,
     emptyMsg: `Aún no hay empresas listadas en ${barrio.name}.`,
+  });
+}
+
+/* Índice maestro de zonas: navegación rápida por toda la Comunidad de Madrid. */
+function renderZonesIndex(ctx) {
+  const distritos = DB.listDistritos();
+  const zones = DB.listZones();
+  const totalMuni = DB.listMunicipios().length + 1;
+  const section = (title, anchor, sub, items) => `
+      <section class="zona-index-block" id="${attr(anchor)}">
+        <h2 class="zona-index-title">${esc(title)} <span class="zona-count">${items.length}</span></h2>
+        ${sub ? `<p class="zona-index-sub">${esc(sub)}</p>` : ''}
+        <div class="chips">${items.map(x => `<a class="chip" href="/zona/${attr(x.slug)}">${esc(x.name)}</a>`).join('')}</div>
+      </section>`;
+  const body = `<div class="container">
+      ${breadcrumb(ctx, [{ name: 'Inicio', href: '/' }, { name: 'Zonas' }])}
+      <header class="page-head">
+        <h1>Reformas y servicios por zona en la Comunidad de Madrid</h1>
+        <p class="page-intro">Cubrimos los ${totalMuni} municipios de la Comunidad de Madrid y los ${distritos.length} distritos de la capital. Elige tu zona para encontrar profesionales cerca de ti.</p>
+      </header>
+      ${section('Madrid capital', 'madrid', `Los ${distritos.length} distritos del municipio de Madrid.`, distritos)}
+      ${zones.map(z => section(z.name, z.slug, null, z.municipios)).join('')}
+    </div>`;
+  return renderLayout(ctx, {
+    title: `Zonas y municipios de Madrid — directorio por zona | ${SITE.name}`,
+    description: `Directorio de reformas y servicios para el hogar en los ${totalMuni} municipios de la Comunidad de Madrid, agrupados por zona: Sur, Corredor del Henares, Norte, Oeste, Sierra de Guadarrama, Sierra Norte y Sureste.`,
+    canonical: abs(ctx, '/zonas'), body,
+    jsonLd: [jsonLdBreadcrumb(ctx, [{ name: 'Inicio', href: '/' }, { name: 'Zonas' }])],
   });
 }
 
@@ -506,6 +570,8 @@ function renderBusiness(ctx, b) {
 function renderHome(ctx) {
   const cats = DB.getCategoryTree();
   const districts = DB.listDistricts();
+  const distritos = DB.listDistritos();
+  const zones = DB.listZones();
   const metros = DB.listMetros();
   const featured = DB.listBusinesses({ featured: true, limit: 6 });
   const featList = featured.length ? featured : DB.listBusinesses({ limit: 6 });
@@ -536,8 +602,8 @@ function renderHome(ctx) {
             <select id="hsService"><option value="">¿Qué necesitas?</option>${cats.map(c => `<option value="${attr(c.slug)}">${esc(c.name)}</option>`).join('')}</select>
           </div>
           <div class="hs-field">
-            <label>Distrito</label>
-            <select id="hsDistrict"><option value="">Toda la ciudad</option>${districts.map(d => `<option value="${attr(d.slug)}">${esc(d.name)}</option>`).join('')}</select>
+            <label>Zona</label>
+            <select id="hsDistrict"><option value="">Toda la Comunidad</option><optgroup label="Madrid capital">${distritos.map(d => `<option value="${attr(d.slug)}">${esc(d.name)}</option>`).join('')}</optgroup>${zones.map(z => `<optgroup label="${attr(z.name)}">${z.municipios.map(m => `<option value="${attr(m.slug)}">${esc(m.name)}</option>`).join('')}</optgroup>`).join('')}</select>
           </div>
           <div class="hs-field">
             <label>Barrio</label>
@@ -556,7 +622,7 @@ function renderHome(ctx) {
         </form>
         <div class="hero-stats">
           <div><b>${total}</b><span>Empresas</span></div>
-          <div><b>${districts.length}</b><span>Distritos</span></div>
+          <div><b>${DB.listMunicipios().length + 1}</b><span>Municipios</span></div>
           <div><b>${cats.length}</b><span>Servicios</span></div>
         </div>
       </div>
@@ -575,8 +641,9 @@ function renderHome(ctx) {
     </section>
 
     <section class="container section">
-      <div class="section-head"><h2>Explora por zona</h2></div>
-      <div class="chips">${districts.map(d => `<a class="chip" href="/zona/${attr(d.slug)}">${esc(d.name)}</a>`).join('')}</div>
+      <div class="section-head"><h2>Explora por zona</h2><a class="section-link" href="/zonas">Ver los 179 municipios ${icon('arrow')}</a></div>
+      ${zonaGroup('Madrid capital', 'madrid', distritos, distritos.length)}
+      ${zones.map(z => zonaGroup(z.name, z.slug, z.municipios.slice(0, 12), z.municipios.length)).join('')}
     </section>`;
 
   return renderLayout(ctx, {
@@ -700,7 +767,7 @@ function render404(ctx, message) {
 /* ---------------------------- Sitemap / robots ----------------------- */
 function renderSitemap(ctx) {
   const urls = ['/'];
-  urls.push('/metro', '/buscar');
+  urls.push('/zonas', '/metro', '/buscar');
   urls.push('/aviso-legal', '/privacidad', '/cookies', '/condiciones');
   const cats = DB.getCategoryTree();
   const districts = DB.listDistricts();
@@ -737,6 +804,6 @@ Sitemap: ${abs(ctx, '/sitemap.xml')}
 module.exports = {
   SITE,
   renderHome, renderCategory, renderDistrict, renderBarrio, renderCategoryMetro,
-  renderZoneDistrict, renderZoneBarrio, renderMetroIndex, renderMetroHub,
+  renderZoneDistrict, renderZoneBarrio, renderZonesIndex, renderMetroIndex, renderMetroHub,
   renderBusiness, renderSearch, renderLegal, render404, renderSitemap, renderRobots,
 };

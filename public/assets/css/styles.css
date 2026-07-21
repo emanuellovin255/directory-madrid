@@ -825,3 +825,27 @@ main { display: block; }
 .tax-inline-form { display: flex; gap: 10px; flex-wrap: wrap; }
 .tax-inline-form .input { flex: 1; min-width: 160px; }
 
+/* ---------------- Zonas: agrupación por región de la Comunidad ---------- */
+/* Mega-menú "Zonas": columnas por grupo + enlace a índice completo. */
+.mega-zonas { min-width: 720px; }
+.mega-all { display: inline-flex; align-items: center; gap: 6px; margin-top: 12px; font-weight: 800; font-size: 13px; color: var(--accent-700); }
+.mega-all .ic { width: 15px; height: 15px; }
+.mega-more { color: var(--accent-700) !important; font-weight: 750 !important; }
+
+/* Home "Explora por zona": grupos con título + conteo + chips. */
+.zona-group { margin: 16px 0 20px; }
+.zona-group:last-child { margin-bottom: 4px; }
+.zona-group-title { display: flex; align-items: center; gap: 9px; font-size: 15px; font-weight: 800; color: var(--ink); margin: 0 0 11px; }
+.zona-group-title a { color: var(--ink); }
+.zona-group-title a:hover { color: var(--accent-700); text-decoration: none; }
+.zona-count { display: inline-grid; place-items: center; min-width: 22px; height: 20px; padding: 0 7px; border-radius: 999px; background: var(--accent-050); color: var(--accent-700); font-size: 12px; font-weight: 800; border: 1px solid var(--accent-100); }
+.chip-more { background: var(--accent-700); color: #fff; border-color: var(--accent-700); font-weight: 800; }
+.chip-more:hover { background: var(--accent-800, var(--accent-700)); text-decoration: none; }
+
+/* Índice /zonas: secciones ancladas por zona. */
+.zona-index-block { margin: 28px 0; scroll-margin-top: 92px; }
+.zona-index-title { display: flex; align-items: center; gap: 10px; font-size: 19px; font-weight: 800; color: var(--ink); margin: 0 0 8px; padding-bottom: 9px; border-bottom: 1px solid var(--line-2); }
+.zona-index-sub { color: var(--muted); font-size: 14px; margin: 0 0 13px; }
+
+@media (max-width: 860px) { .mega-zonas { min-width: 0; } }
+

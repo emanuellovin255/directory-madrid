@@ -21,7 +21,7 @@ const cookieSession = require('cookie-session');
 })(path.join(__dirname, '..', '.env'));
 
 const DB = require('./db');
-const { seedIfEmpty, ensureCategories, DEMO_BUSINESSES } = require('./seed');
+const { seedIfEmpty, ensureCategories, ensureMunicipios, DEMO_BUSINESSES } = require('./seed');
 const { extractFromUrl } = require('./extract');
 const R = require('./render');
 
@@ -41,7 +41,7 @@ if (!SERVERLESS) { try { fs.mkdirSync(UPLOADS_DIR, { recursive: true }); } catch
 /* Slug-uri rezervate care NU pot fi categorii (ar intra în conflict cu rutele). */
 const RESERVED_SLUGS = new Set([
   'api', 'uploads', 'assets', 'admin', 'login', 'admin.html', 'login.html', 'index.html',
-  'negocio', 'zona', 'metro', 'buscar', 'sitemap.xml', 'robots.txt', 'favicon.ico',
+  'negocio', 'zona', 'zonas', 'metro', 'buscar', 'sitemap.xml', 'robots.txt', 'favicon.ico',
   'aviso-legal', 'privacidad', 'cookies', 'condiciones',
 ]);
 function isReservedSlug(s) { return RESERVED_SLUGS.has(String(s || '').toLowerCase()); }
@@ -59,9 +59,11 @@ const ready = (async () => {
     console.error('⚠️  Nu m-am putut conecta la Postgres (Supabase):', e.message);
   }
   seedIfEmpty();
-  // Migrare idempotentă: adaugă categoriile noi pe DB deja populate (disc/Supabase).
+  // Migrări idempotente: adaugă categoriile + cele 178 de municipios pe DB deja
+  // populate (disc/Supabase), unde seedIfEmpty nu mai intră.
   const catsChanged = ensureCategories();
-  if (DB.persistenceEnabled() && (hydrated === 0 || catsChanged > 0)) {
+  const munisChanged = ensureMunicipios();
+  if (DB.persistenceEnabled() && (hydrated === 0 || catsChanged > 0 || munisChanged > 0)) {
     try { await DB.persist(); }
     catch (e) { console.error('⚠️  Nu am putut salva seed-ul în Postgres:', e.message); }
   }
@@ -261,6 +263,7 @@ app.get('/', (req, res) => sendHtml(res, R.renderHome(ctx(req))));
 app.get('/sitemap.xml', (req, res) => res.type('application/xml').send(R.renderSitemap(ctx(req))));
 app.get('/robots.txt', (req, res) => res.type('text/plain').send(R.renderRobots(ctx(req))));
 app.get('/buscar', (req, res) => sendHtml(res, R.renderSearch(ctx(req), req.query.q)));
+app.get('/zonas', (req, res) => sendHtml(res, R.renderZonesIndex(ctx(req))));
 
 /* Páginas legales (RGPD / LSSI-CE) */
 app.get('/:doc(aviso-legal|privacidad|cookies|condiciones)', (req, res, next) => {

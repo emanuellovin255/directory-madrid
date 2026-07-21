@@ -1,0 +1,925 @@
+{
+  "_comment": "178 municipios de la Comunidad de Madrid (todos excepto la capital, cubierta por sus 21 distritos). Agrupados por zona para navegación. Slugs precalculados (sin acentos) para URLs SEO.",
+  "zones": [
+    {
+      "slug": "sur",
+      "name": "Sur"
+    },
+    {
+      "slug": "este",
+      "name": "Corredor del Henares (Este)"
+    },
+    {
+      "slug": "norte",
+      "name": "Norte"
+    },
+    {
+      "slug": "oeste",
+      "name": "Oeste"
+    },
+    {
+      "slug": "guadarrama",
+      "name": "Sierra de Guadarrama"
+    },
+    {
+      "slug": "sierra-norte",
+      "name": "Sierra Norte"
+    },
+    {
+      "slug": "sureste",
+      "name": "Sureste (Las Vegas)"
+    }
+  ],
+  "municipios": [
+    {
+      "slug": "alcorcon",
+      "name": "Alcorcón",
+      "zona": "sur"
+    },
+    {
+      "slug": "arroyomolinos",
+      "name": "Arroyomolinos",
+      "zona": "sur"
+    },
+    {
+      "slug": "batres",
+      "name": "Batres",
+      "zona": "sur"
+    },
+    {
+      "slug": "casarrubuelos",
+      "name": "Casarrubuelos",
+      "zona": "sur"
+    },
+    {
+      "slug": "ciempozuelos",
+      "name": "Ciempozuelos",
+      "zona": "sur"
+    },
+    {
+      "slug": "cubas-de-la-sagra",
+      "name": "Cubas de la Sagra",
+      "zona": "sur"
+    },
+    {
+      "slug": "el-alamo",
+      "name": "El Álamo",
+      "zona": "sur"
+    },
+    {
+      "slug": "fuenlabrada",
+      "name": "Fuenlabrada",
+      "zona": "sur"
+    },
+    {
+      "slug": "getafe",
+      "name": "Getafe",
+      "zona": "sur"
+    },
+    {
+      "slug": "grinon",
+      "name": "Griñón",
+      "zona": "sur"
+    },
+    {
+      "slug": "humanes-de-madrid",
+      "name": "Humanes de Madrid",
+      "zona": "sur"
+    },
+    {
+      "slug": "leganes",
+      "name": "Leganés",
+      "zona": "sur"
+    },
+    {
+      "slug": "moraleja-de-enmedio",
+      "name": "Moraleja de Enmedio",
+      "zona": "sur"
+    },
+    {
+      "slug": "mostoles",
+      "name": "Móstoles",
+      "zona": "sur"
+    },
+    {
+      "slug": "parla",
+      "name": "Parla",
+      "zona": "sur"
+    },
+    {
+      "slug": "pinto",
+      "name": "Pinto",
+      "zona": "sur"
+    },
+    {
+      "slug": "san-martin-de-la-vega",
+      "name": "San Martín de la Vega",
+      "zona": "sur"
+    },
+    {
+      "slug": "serranillos-del-valle",
+      "name": "Serranillos del Valle",
+      "zona": "sur"
+    },
+    {
+      "slug": "torrejon-de-velasco",
+      "name": "Torrejón de Velasco",
+      "zona": "sur"
+    },
+    {
+      "slug": "torrejon-de-la-calzada",
+      "name": "Torrejón de la Calzada",
+      "zona": "sur"
+    },
+    {
+      "slug": "valdemoro",
+      "name": "Valdemoro",
+      "zona": "sur"
+    },
+    {
+      "slug": "ajalvir",
+      "name": "Ajalvir",
+      "zona": "este"
+    },
+    {
+      "slug": "alcala-de-henares",
+      "name": "Alcalá de Henares",
+      "zona": "este"
+    },
+    {
+      "slug": "anchuelo",
+      "name": "Anchuelo",
+      "zona": "este"
+    },
+    {
+      "slug": "camarma-de-esteruelas",
+      "name": "Camarma de Esteruelas",
+      "zona": "este"
+    },
+    {
+      "slug": "corpa",
+      "name": "Corpa",
+      "zona": "este"
+    },
+    {
+      "slug": "coslada",
+      "name": "Coslada",
+      "zona": "este"
+    },
+    {
+      "slug": "daganzo-de-arriba",
+      "name": "Daganzo de Arriba",
+      "zona": "este"
+    },
+    {
+      "slug": "fresno-de-torote",
+      "name": "Fresno de Torote",
+      "zona": "este"
+    },
+    {
+      "slug": "loeches",
+      "name": "Loeches",
+      "zona": "este"
+    },
+    {
+      "slug": "los-santos-de-la-humosa",
+      "name": "Los Santos de la Humosa",
+      "zona": "este"
+    },
+    {
+      "slug": "meco",
+      "name": "Meco",
+      "zona": "este"
+    },
+    {
+      "slug": "mejorada-del-campo",
+      "name": "Mejorada del Campo",
+      "zona": "este"
+    },
+    {
+      "slug": "pozuelo-del-rey",
+      "name": "Pozuelo del Rey",
+      "zona": "este"
+    },
+    {
+      "slug": "ribatejada",
+      "name": "Ribatejada",
+      "zona": "este"
+    },
+    {
+      "slug": "san-fernando-de-henares",
+      "name": "San Fernando de Henares",
+      "zona": "este"
+    },
+    {
+      "slug": "santorcaz",
+      "name": "Santorcaz",
+      "zona": "este"
+    },
+    {
+      "slug": "torrejon-de-ardoz",
+      "name": "Torrejón de Ardoz",
+      "zona": "este"
+    },
+    {
+      "slug": "torres-de-la-alameda",
+      "name": "Torres de la Alameda",
+      "zona": "este"
+    },
+    {
+      "slug": "valdeavero",
+      "name": "Valdeavero",
+      "zona": "este"
+    },
+    {
+      "slug": "valverde-de-alcala",
+      "name": "Valverde de Alcalá",
+      "zona": "este"
+    },
+    {
+      "slug": "velilla-de-san-antonio",
+      "name": "Velilla de San Antonio",
+      "zona": "este"
+    },
+    {
+      "slug": "villalbilla",
+      "name": "Villalbilla",
+      "zona": "este"
+    },
+    {
+      "slug": "alcobendas",
+      "name": "Alcobendas",
+      "zona": "norte"
+    },
+    {
+      "slug": "algete",
+      "name": "Algete",
+      "zona": "norte"
+    },
+    {
+      "slug": "cobena",
+      "name": "Cobeña",
+      "zona": "norte"
+    },
+    {
+      "slug": "colmenar-viejo",
+      "name": "Colmenar Viejo",
+      "zona": "norte"
+    },
+    {
+      "slug": "el-molar",
+      "name": "El Molar",
+      "zona": "norte"
+    },
+    {
+      "slug": "fuente-el-saz-de-jarama",
+      "name": "Fuente el Saz de Jarama",
+      "zona": "norte"
+    },
+    {
+      "slug": "paracuellos-de-jarama",
+      "name": "Paracuellos de Jarama",
+      "zona": "norte"
+    },
+    {
+      "slug": "pedrezuela",
+      "name": "Pedrezuela",
+      "zona": "norte"
+    },
+    {
+      "slug": "san-agustin-del-guadalix",
+      "name": "San Agustín del Guadalix",
+      "zona": "norte"
+    },
+    {
+      "slug": "san-sebastian-de-los-reyes",
+      "name": "San Sebastián de los Reyes",
+      "zona": "norte"
+    },
+    {
+      "slug": "talamanca-de-jarama",
+      "name": "Talamanca de Jarama",
+      "zona": "norte"
+    },
+    {
+      "slug": "tres-cantos",
+      "name": "Tres Cantos",
+      "zona": "norte"
+    },
+    {
+      "slug": "valdeolmos-alalpardo",
+      "name": "Valdeolmos-Alalpardo",
+      "zona": "norte"
+    },
+    {
+      "slug": "valdepielagos",
+      "name": "Valdepiélagos",
+      "zona": "norte"
+    },
+    {
+      "slug": "valdetorres-de-jarama",
+      "name": "Valdetorres de Jarama",
+      "zona": "norte"
+    },
+    {
+      "slug": "aldea-del-fresno",
+      "name": "Aldea del Fresno",
+      "zona": "oeste"
+    },
+    {
+      "slug": "boadilla-del-monte",
+      "name": "Boadilla del Monte",
+      "zona": "oeste"
+    },
+    {
+      "slug": "brunete",
+      "name": "Brunete",
+      "zona": "oeste"
+    },
+    {
+      "slug": "cadalso-de-los-vidrios",
+      "name": "Cadalso de los Vidrios",
+      "zona": "oeste"
+    },
+    {
+      "slug": "cenicientos",
+      "name": "Cenicientos",
+      "zona": "oeste"
+    },
+    {
+      "slug": "chapineria",
+      "name": "Chapinería",
+      "zona": "oeste"
+    },
+    {
+      "slug": "colmenar-del-arroyo",
+      "name": "Colmenar del Arroyo",
+      "zona": "oeste"
+    },
+    {
+      "slug": "colmenarejo",
+      "name": "Colmenarejo",
+      "zona": "oeste"
+    },
+    {
+      "slug": "fresnedillas-de-la-oliva",
+      "name": "Fresnedillas de la Oliva",
+      "zona": "oeste"
+    },
+    {
+      "slug": "las-rozas-de-madrid",
+      "name": "Las Rozas de Madrid",
+      "zona": "oeste"
+    },
+    {
+      "slug": "majadahonda",
+      "name": "Majadahonda",
+      "zona": "oeste"
+    },
+    {
+      "slug": "navalagamella",
+      "name": "Navalagamella",
+      "zona": "oeste"
+    },
+    {
+      "slug": "navalcarnero",
+      "name": "Navalcarnero",
+      "zona": "oeste"
+    },
+    {
+      "slug": "navas-del-rey",
+      "name": "Navas del Rey",
+      "zona": "oeste"
+    },
+    {
+      "slug": "pelayos-de-la-presa",
+      "name": "Pelayos de la Presa",
+      "zona": "oeste"
+    },
+    {
+      "slug": "pozuelo-de-alarcon",
+      "name": "Pozuelo de Alarcón",
+      "zona": "oeste"
+    },
+    {
+      "slug": "quijorna",
+      "name": "Quijorna",
+      "zona": "oeste"
+    },
+    {
+      "slug": "robledo-de-chavela",
+      "name": "Robledo de Chavela",
+      "zona": "oeste"
+    },
+    {
+      "slug": "rozas-de-puerto-real",
+      "name": "Rozas de Puerto Real",
+      "zona": "oeste"
+    },
+    {
+      "slug": "san-martin-de-valdeiglesias",
+      "name": "San Martín de Valdeiglesias",
+      "zona": "oeste"
+    },
+    {
+      "slug": "sevilla-la-nueva",
+      "name": "Sevilla la Nueva",
+      "zona": "oeste"
+    },
+    {
+      "slug": "valdemaqueda",
+      "name": "Valdemaqueda",
+      "zona": "oeste"
+    },
+    {
+      "slug": "valdemorillo",
+      "name": "Valdemorillo",
+      "zona": "oeste"
+    },
+    {
+      "slug": "villa-del-prado",
+      "name": "Villa del Prado",
+      "zona": "oeste"
+    },
+    {
+      "slug": "villamanta",
+      "name": "Villamanta",
+      "zona": "oeste"
+    },
+    {
+      "slug": "villamantilla",
+      "name": "Villamantilla",
+      "zona": "oeste"
+    },
+    {
+      "slug": "villanueva-de-perales",
+      "name": "Villanueva de Perales",
+      "zona": "oeste"
+    },
+    {
+      "slug": "villanueva-de-la-canada",
+      "name": "Villanueva de la Cañada",
+      "zona": "oeste"
+    },
+    {
+      "slug": "villanueva-del-pardillo",
+      "name": "Villanueva del Pardillo",
+      "zona": "oeste"
+    },
+    {
+      "slug": "villaviciosa-de-odon",
+      "name": "Villaviciosa de Odón",
+      "zona": "oeste"
+    },
+    {
+      "slug": "alpedrete",
+      "name": "Alpedrete",
+      "zona": "guadarrama"
+    },
+    {
+      "slug": "becerril-de-la-sierra",
+      "name": "Becerril de la Sierra",
+      "zona": "guadarrama"
+    },
+    {
+      "slug": "cercedilla",
+      "name": "Cercedilla",
+      "zona": "guadarrama"
+    },
+    {
+      "slug": "collado-mediano",
+      "name": "Collado Mediano",
+      "zona": "guadarrama"
+    },
+    {
+      "slug": "collado-villalba",
+      "name": "Collado Villalba",
+      "zona": "guadarrama"
+    },
+    {
+      "slug": "el-boalo",
+      "name": "El Boalo",
+      "zona": "guadarrama"
+    },
+    {
+      "slug": "el-escorial",
+      "name": "El Escorial",
+      "zona": "guadarrama"
+    },
+    {
+      "slug": "galapagar",
+      "name": "Galapagar",
+      "zona": "guadarrama"
+    },
+    {
+      "slug": "guadarrama",
+      "name": "Guadarrama",
+      "zona": "guadarrama"
+    },
+    {
+      "slug": "hoyo-de-manzanares",
+      "name": "Hoyo de Manzanares",
+      "zona": "guadarrama"
+    },
+    {
+      "slug": "los-molinos",
+      "name": "Los Molinos",
+      "zona": "guadarrama"
+    },
+    {
+      "slug": "manzanares-el-real",
+      "name": "Manzanares el Real",
+      "zona": "guadarrama"
+    },
+    {
+      "slug": "moralzarzal",
+      "name": "Moralzarzal",
+      "zona": "guadarrama"
+    },
+    {
+      "slug": "navacerrada",
+      "name": "Navacerrada",
+      "zona": "guadarrama"
+    },
+    {
+      "slug": "san-lorenzo-de-el-escorial",
+      "name": "San Lorenzo de El Escorial",
+      "zona": "guadarrama"
+    },
+    {
+      "slug": "santa-maria-de-la-alameda",
+      "name": "Santa María de la Alameda",
+      "zona": "guadarrama"
+    },
+    {
+      "slug": "soto-del-real",
+      "name": "Soto del Real",
+      "zona": "guadarrama"
+    },
+    {
+      "slug": "torrelodones",
+      "name": "Torrelodones",
+      "zona": "guadarrama"
+    },
+    {
+      "slug": "zarzalejo",
+      "name": "Zarzalejo",
+      "zona": "guadarrama"
+    },
+    {
+      "slug": "alameda-del-valle",
+      "name": "Alameda del Valle",
+      "zona": "sierra-norte"
+    },
+    {
+      "slug": "berzosa-del-lozoya",
+      "name": "Berzosa del Lozoya",
+      "zona": "sierra-norte"
+    },
+    {
+      "slug": "braojos",
+      "name": "Braojos",
+      "zona": "sierra-norte"
+    },
+    {
+      "slug": "buitrago-del-lozoya",
+      "name": "Buitrago del Lozoya",
+      "zona": "sierra-norte"
+    },
+    {
+      "slug": "bustarviejo",
+      "name": "Bustarviejo",
+      "zona": "sierra-norte"
+    },
+    {
+      "slug": "cabanillas-de-la-sierra",
+      "name": "Cabanillas de la Sierra",
+      "zona": "sierra-norte"
+    },
+    {
+      "slug": "canencia",
+      "name": "Canencia",
+      "zona": "sierra-norte"
+    },
+    {
+      "slug": "cervera-de-buitrago",
+      "name": "Cervera de Buitrago",
+      "zona": "sierra-norte"
+    },
+    {
+      "slug": "el-atazar",
+      "name": "El Atazar",
+      "zona": "sierra-norte"
+    },
+    {
+      "slug": "el-berrueco",
+      "name": "El Berrueco",
+      "zona": "sierra-norte"
+    },
+    {
+      "slug": "el-vellon",
+      "name": "El Vellón",
+      "zona": "sierra-norte"
+    },
+    {
+      "slug": "garganta-de-los-montes",
+      "name": "Garganta de los Montes",
+      "zona": "sierra-norte"
+    },
+    {
+      "slug": "gargantilla-del-lozoya-y-pinilla-de-buitrago",
+      "name": "Gargantilla del Lozoya y Pinilla de Buitrago",
+      "zona": "sierra-norte"
+    },
+    {
+      "slug": "gascones",
+      "name": "Gascones",
+      "zona": "sierra-norte"
+    },
+    {
+      "slug": "guadalix-de-la-sierra",
+      "name": "Guadalix de la Sierra",
+      "zona": "sierra-norte"
+    },
+    {
+      "slug": "horcajo-de-la-sierra-aoslos",
+      "name": "Horcajo de la Sierra-Aoslos",
+      "zona": "sierra-norte"
+    },
+    {
+      "slug": "horcajuelo-de-la-sierra",
+      "name": "Horcajuelo de la Sierra",
+      "zona": "sierra-norte"
+    },
+    {
+      "slug": "la-acebeda",
+      "name": "La Acebeda",
+      "zona": "sierra-norte"
+    },
+    {
+      "slug": "la-cabrera",
+      "name": "La Cabrera",
+      "zona": "sierra-norte"
+    },
+    {
+      "slug": "la-hiruela",
+      "name": "La Hiruela",
+      "zona": "sierra-norte"
+    },
+    {
+      "slug": "la-serna-del-monte",
+      "name": "La Serna del Monte",
+      "zona": "sierra-norte"
+    },
+    {
+      "slug": "lozoya",
+      "name": "Lozoya",
+      "zona": "sierra-norte"
+    },
+    {
+      "slug": "lozoyuela-navas-sieteiglesias",
+      "name": "Lozoyuela-Navas-Sieteiglesias",
+      "zona": "sierra-norte"
+    },
+    {
+      "slug": "madarcos",
+      "name": "Madarcos",
+      "zona": "sierra-norte"
+    },
+    {
+      "slug": "miraflores-de-la-sierra",
+      "name": "Miraflores de la Sierra",
+      "zona": "sierra-norte"
+    },
+    {
+      "slug": "montejo-de-la-sierra",
+      "name": "Montejo de la Sierra",
+      "zona": "sierra-norte"
+    },
+    {
+      "slug": "navalafuente",
+      "name": "Navalafuente",
+      "zona": "sierra-norte"
+    },
+    {
+      "slug": "navarredonda-y-san-mames",
+      "name": "Navarredonda y San Mamés",
+      "zona": "sierra-norte"
+    },
+    {
+      "slug": "patones",
+      "name": "Patones",
+      "zona": "sierra-norte"
+    },
+    {
+      "slug": "pinilla-del-valle",
+      "name": "Pinilla del Valle",
+      "zona": "sierra-norte"
+    },
+    {
+      "slug": "pinuecar-gandullas",
+      "name": "Piñuécar-Gandullas",
+      "zona": "sierra-norte"
+    },
+    {
+      "slug": "pradena-del-rincon",
+      "name": "Prádena del Rincón",
+      "zona": "sierra-norte"
+    },
+    {
+      "slug": "puebla-de-la-sierra",
+      "name": "Puebla de la Sierra",
+      "zona": "sierra-norte"
+    },
+    {
+      "slug": "puentes-viejas",
+      "name": "Puentes Viejas",
+      "zona": "sierra-norte"
+    },
+    {
+      "slug": "rascafria",
+      "name": "Rascafría",
+      "zona": "sierra-norte"
+    },
+    {
+      "slug": "reduena",
+      "name": "Redueña",
+      "zona": "sierra-norte"
+    },
+    {
+      "slug": "robledillo-de-la-jara",
+      "name": "Robledillo de la Jara",
+      "zona": "sierra-norte"
+    },
+    {
+      "slug": "robregordo",
+      "name": "Robregordo",
+      "zona": "sierra-norte"
+    },
+    {
+      "slug": "somosierra",
+      "name": "Somosierra",
+      "zona": "sierra-norte"
+    },
+    {
+      "slug": "torrelaguna",
+      "name": "Torrelaguna",
+      "zona": "sierra-norte"
+    },
+    {
+      "slug": "torremocha-de-jarama",
+      "name": "Torremocha de Jarama",
+      "zona": "sierra-norte"
+    },
+    {
+      "slug": "valdemanco",
+      "name": "Valdemanco",
+      "zona": "sierra-norte"
+    },
+    {
+      "slug": "venturada",
+      "name": "Venturada",
+      "zona": "sierra-norte"
+    },
+    {
+      "slug": "villavieja-del-lozoya",
+      "name": "Villavieja del Lozoya",
+      "zona": "sierra-norte"
+    },
+    {
+      "slug": "ambite",
+      "name": "Ambite",
+      "zona": "sureste"
+    },
+    {
+      "slug": "aranjuez",
+      "name": "Aranjuez",
+      "zona": "sureste"
+    },
+    {
+      "slug": "arganda-del-rey",
+      "name": "Arganda del Rey",
+      "zona": "sureste"
+    },
+    {
+      "slug": "belmonte-de-tajo",
+      "name": "Belmonte de Tajo",
+      "zona": "sureste"
+    },
+    {
+      "slug": "brea-de-tajo",
+      "name": "Brea de Tajo",
+      "zona": "sureste"
+    },
+    {
+      "slug": "campo-real",
+      "name": "Campo Real",
+      "zona": "sureste"
+    },
+    {
+      "slug": "carabana",
+      "name": "Carabaña",
+      "zona": "sureste"
+    },
+    {
+      "slug": "chinchon",
+      "name": "Chinchón",
+      "zona": "sureste"
+    },
+    {
+      "slug": "colmenar-de-oreja",
+      "name": "Colmenar de Oreja",
+      "zona": "sureste"
+    },
+    {
+      "slug": "estremera",
+      "name": "Estremera",
+      "zona": "sureste"
+    },
+    {
+      "slug": "fuentiduena-de-tajo",
+      "name": "Fuentidueña de Tajo",
+      "zona": "sureste"
+    },
+    {
+      "slug": "morata-de-tajuna",
+      "name": "Morata de Tajuña",
+      "zona": "sureste"
+    },
+    {
+      "slug": "nuevo-baztan",
+      "name": "Nuevo Baztán",
+      "zona": "sureste"
+    },
+    {
+      "slug": "olmeda-de-las-fuentes",
+      "name": "Olmeda de las Fuentes",
+      "zona": "sureste"
+    },
+    {
+      "slug": "orusco-de-tajuna",
+      "name": "Orusco de Tajuña",
+      "zona": "sureste"
+    },
+    {
+      "slug": "perales-de-tajuna",
+      "name": "Perales de Tajuña",
+      "zona": "sureste"
+    },
+    {
+      "slug": "pezuela-de-las-torres",
+      "name": "Pezuela de las Torres",
+      "zona": "sureste"
+    },
+    {
+      "slug": "rivas-vaciamadrid",
+      "name": "Rivas-Vaciamadrid",
+      "zona": "sureste"
+    },
+    {
+      "slug": "tielmes",
+      "name": "Tielmes",
+      "zona": "sureste"
+    },
+    {
+      "slug": "titulcia",
+      "name": "Titulcia",
+      "zona": "sureste"
+    },
+    {
+      "slug": "valdaracete",
+      "name": "Valdaracete",
+      "zona": "sureste"
+    },
+    {
+      "slug": "valdelaguna",
+      "name": "Valdelaguna",
+      "zona": "sureste"
+    },
+    {
+      "slug": "valdilecha",
+      "name": "Valdilecha",
+      "zona": "sureste"
+    },
+    {
+      "slug": "villaconejos",
+      "name": "Villaconejos",
+      "zona": "sureste"
+    },
+    {
+      "slug": "villamanrique-de-tajo",
+      "name": "Villamanrique de Tajo",
+      "zona": "sureste"
+    },
+    {
+      "slug": "villar-del-olmo",
+      "name": "Villar del Olmo",
+      "zona": "sureste"
+    },
+    {
+      "slug": "villarejo-de-salvanes",
+      "name": "Villarejo de Salvanés",
+      "zona": "sureste"
+    }
+  ]
+}

@@ -9,6 +9,18 @@ const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 const pgstore = require('./pgstore');
 
+/* Geografie: distingem cele 21 de distritos ale capitalei (madrid-geo.json) de
+   cele 178 de municipios ale Comunidad de Madrid (madrid-municipios.json).
+   Ambele trăiesc în tabelul `districts`; „kind" și „zona" se DERIVĂ din slug
+   (fără coloană nouă → fără migrare în Postgres). */
+const GEO = require('./data/madrid-geo.json');
+const MUNIS = require('./data/madrid-municipios.json');
+const DISTRITO_SLUGS = new Set(GEO.districts.map(d => d.slug));
+const MUNI_ZONA = new Map(MUNIS.municipios.map(m => [m.slug, m.zona]));
+const ZONES = MUNIS.zones;                       // [{slug,name}] în ordinea de afișare
+function districtKind(slug) { return DISTRITO_SLUGS.has(slug) ? 'distrito' : 'municipio'; }
+function districtZona(slug) { return MUNI_ZONA.get(slug) || null; }
+
 /* Modul de rulare:
    • Cu DATABASE_URL (Supabase) SAU pe Vercel → SQLite `:memory:` (FS-ul e
      read-only pe serverless). Persistența durabilă vine din Postgres.
@@ -186,7 +198,7 @@ function updateCategory(id, data) {
 function removeCategory(id) { return db.prepare('DELETE FROM categories WHERE id=?').run(id).changes > 0; }
 
 /* ============================ DISTRICTS ============================== */
-function parseDistrict(r) { return r ? { id: r.id, slug: r.slug, name: r.name, display_order: r.display_order || 0 } : null; }
+function parseDistrict(r) { return r ? { id: r.id, slug: r.slug, name: r.name, display_order: r.display_order || 0, kind: districtKind(r.slug), zona: districtZona(r.slug) } : null; }
 function listDistricts() { return db.prepare('SELECT * FROM districts ORDER BY display_order, name').all().map(parseDistrict); }
 function getDistrict(id) { return parseDistrict(db.prepare('SELECT * FROM districts WHERE id=?').get(id)); }
 function getDistrictBySlug(slug) { return parseDistrict(db.prepare('SELECT * FROM districts WHERE slug=?').get(String(slug || ''))); }
@@ -194,6 +206,15 @@ function countDistricts() { return db.prepare('SELECT COUNT(*) c FROM districts'
 function insertDistrict(name, slug, order) {
   const info = db.prepare('INSERT INTO districts (slug,name,display_order) VALUES (?,?,?)').run(slug || slugify(name), name, order || 0);
   return getDistrict(Number(info.lastInsertRowid));
+}
+/* Distritos capitalei vs municipios ale Comunidad; zone geografice pentru navegación. */
+function listDistritos() { return listDistricts().filter(d => d.kind === 'distrito'); }
+function listMunicipios() { return listDistricts().filter(d => d.kind === 'municipio'); }
+function listZones() {
+  const munis = listMunicipios();
+  return ZONES
+    .map(z => ({ slug: z.slug, name: z.name, municipios: munis.filter(m => m.zona === z.slug) }))
+    .filter(z => z.municipios.length);
 }
 
 /* ========================== NEIGHBORHOODS =========================== */
@@ -508,8 +529,9 @@ module.exports = {
   initPersistence, persist, persistenceEnabled,
   // categories
   listCategories, getCategoryTree, getCategory, getCategoryBySlug, insertCategory, updateCategory, removeCategory, descendantCategoryIds, countCategories,
-  // districts / neighborhoods
+  // districts / neighborhoods / zonas
   listDistricts, getDistrict, getDistrictBySlug, countDistricts, insertDistrict,
+  listDistritos, listMunicipios, listZones, ZONES,
   listNeighborhoods, getNeighborhood, getNeighborhoodBySlug, insertNeighborhood,
   // metros
   listMetros, getMetro, getMetroBySlug, insertMetro, updateMetro, removeMetro, countMetros,

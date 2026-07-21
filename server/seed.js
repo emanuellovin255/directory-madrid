@@ -8,6 +8,7 @@
 'use strict';
 const DB = require('./db');
 const GEO = require('./data/madrid-geo.json');
+const MUNIS = require('./data/madrid-municipios.json');
 
 /* --------------------------- Categorii ------------------------------- */
 const CATEGORIES = [
@@ -278,6 +279,24 @@ function ensureCategories() {
   return changed;
 }
 
+/* Idempotent: adaugă cele 178 de municipios ale Comunidad de Madrid (pe lângă
+   cele 21 de distritos ale capitalei). Rulează la fiecare boot, inclusiv pe DB
+   deja populate (SQLite pe disc, Supabase) — de aceea NU folosim seedIfEmpty,
+   care se oprește când există deja distritos. Inserează doar ce lipsește;
+   display_order 100+ îi păstrează după distritos, grupați pe zonă. Returnează
+   numărul de inserări → apelantul decide dacă trebuie să persiste în Postgres. */
+function ensureMunicipios() {
+  let changed = 0;
+  MUNIS.municipios.forEach((m, i) => {
+    if (!DB.getDistrictBySlug(m.slug)) {
+      DB.insertDistrict(m.name, m.slug, 100 + i);
+      changed++;
+    }
+  });
+  if (changed) console.log(`  ↳ Municipios de la Comunidad de Madrid añadidos (${changed})`);
+  return changed;
+}
+
 function seedMetrosIfEmpty() {
   if (DB.countMetros() > 0) return false;
   METROS.forEach(m => DB.insertMetro({ name: m.name, lines: m.lines }));
@@ -323,4 +342,4 @@ function seedIfEmpty() {
   return { seededGeo, seededCategories, seededMetros, seededBusinesses };
 }
 
-module.exports = { seedIfEmpty, ensureCategories, DEMO_BUSINESSES, CATEGORIES, METROS };
+module.exports = { seedIfEmpty, ensureCategories, ensureMunicipios, DEMO_BUSINESSES, CATEGORIES, METROS };

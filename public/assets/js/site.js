@@ -38,10 +38,11 @@
   if (selDistrict && selBarrio) {
     selDistrict.addEventListener('change', function () {
       var dist = (RM.districts || []).filter(function (d) { return d.slug === selDistrict.value; })[0];
+      var hasBarrios = !!(dist && dist.barrios && dist.barrios.length);
       var opts = '<option value="">Todo el distrito</option>';
-      if (dist) opts += (dist.barrios || []).map(function (b) { return '<option value="' + esc(b.slug) + '">' + esc(b.name) + '</option>'; }).join('');
+      if (hasBarrios) opts += dist.barrios.map(function (b) { return '<option value="' + esc(b.slug) + '">' + esc(b.name) + '</option>'; }).join('');
       selBarrio.innerHTML = opts;
-      selBarrio.disabled = !dist;
+      selBarrio.disabled = !hasBarrios;
     });
   }
 
