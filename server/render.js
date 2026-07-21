@@ -41,7 +41,7 @@ function bizPhoto(b) {
 /* Imagen de la tarjeta de servicio (home). Las categorías clásicas usan foto
    real (/assets/img/cat-<slug>.jpg); las nuevas usan una ilustración SVG
    embebida y coherente con el diseño (sin ficheros binarios). */
-const CAT_PHOTO = new Set(['reformas', 'fontaneros', 'electricistas', 'climatizacion', 'cerrajeros']);
+const CAT_PHOTO = new Set(['reformas', 'fontaneros', 'electricistas', 'climatizacion', 'cerrajeros', 'control-de-plagas', 'mudanzas', 'talleres']);
 const CAT_ART = {
   'control-de-plagas': {
     c1: '#16a34a', c2: '#065f46',

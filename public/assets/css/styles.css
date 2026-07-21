@@ -597,7 +597,8 @@ main { display: block; }
     url("/assets/img/hero-madrid.jpg");
   background-size: cover, cover; background-position: center, center; background-repeat: no-repeat;
 }
-.hero-inner { position: relative; z-index: 1; padding: 78px 0 64px; text-align: center; color: #fff; }
+.hero-inner { position: relative; z-index: 1; padding: 78px 0 40px; text-align: center; color: #fff; }
+@media (max-width: 640px) { .hero-inner { padding: 44px 0 26px; } }
 .hero-eyebrow { display: inline-block; color: rgba(255,255,255,.85); font-weight: 650; font-size: 13.5px; letter-spacing: .02em; margin-bottom: 14px; text-shadow: 0 1px 8px rgba(0,0,0,.4); }
 .hero-title { font-size: clamp(30px, 5vw, 54px); font-weight: 850; letter-spacing: -.03em; text-shadow: 0 3px 24px rgba(0,0,0,.4); }
 .hero-title span { color: #ffd9a0; }
