@@ -21,7 +21,7 @@
 
   let categoriesTree = [], categoriesFlat = [], districts = [], metros = [];
   const barrioCache = {};
-  let formPhoto = null, editingId = null, cache = [];
+  let formPhoto = null, formLogo = null, formPhotos = [], editingId = null, cache = [];
 
   /* --------------------------- Taxonomía (carga) ------------------------ */
   async function loadTaxonomy() {
@@ -126,6 +126,12 @@
       `<div class="field"><label>${s.label}</label><input class="input" data-social="${s.key}" placeholder="${attr(s.ph)}" /></div>`).join('');
   }
   function setPreview() { $('#f-photo-preview').src = formPhoto || D.placeholderImage($('#f-name').value || 'Nuevo negocio'); }
+  function setLogoPreview() { $('#f-logo-preview').src = formLogo || D.placeholderImage($('#f-name').value || 'Logo'); }
+  function renderGallery() {
+    $('#f-photos-gallery').innerHTML = formPhotos.map((url, i) =>
+      `<div class="pg-thumb"><img src="${attr(url)}" alt="" /><button type="button" class="pg-remove" data-i="${i}" title="Quitar">×</button></div>`).join('')
+      + `<button type="button" class="pg-add-tile" id="f-photos-add" title="Añadir fotos">+</button>`;
+  }
 
   async function openDrawer(id) {
     editingId = id || null;
@@ -138,7 +144,7 @@
     $$('#f-social [data-social]').forEach(i => { i.value = ''; });
     $$('#f-categories input:checked, #f-metros input:checked').forEach(i => { i.checked = false; });
     $('#f-metro-filter').value = ''; filterMetros('');
-    formPhoto = null;
+    formPhoto = null; formLogo = null; formPhotos = [];
     $('#importSummary').classList.add('hidden');
     await loadBarrios(null);
 
@@ -147,14 +153,14 @@
       $('#f-phone').value = b.phone; $('#f-email').value = b.email; $('#f-website').value = b.website;
       $('#f-rating').value = b.rating != null ? b.rating : ''; $('#f-reviews').value = b.reviews || '';
       $('#f-featured').checked = !!b.featured;
-      formPhoto = b.photo || null;
+      formPhoto = b.photo || null; formLogo = b.logo || null; formPhotos = Array.isArray(b.photos) ? b.photos.slice() : [];
       (b.categories || []).forEach(c => { const el = $(`#f-categories input[data-cat="${c.id}"]`); if (el) el.checked = true; });
       (b.metros || []).forEach(m => { const el = $(`#f-metros input[data-metro="${m.id}"]`); if (el) el.checked = true; });
       $$('#f-hours [data-day]').forEach(i => { const v = b.hours && b.hours[i.dataset.day]; i.value = (v && v !== 'Cerrado') ? v : ''; });
       $$('#f-social [data-social]').forEach(i => { i.value = (b.social && b.social[i.dataset.social]) || ''; });
       if (b.district) { $('#f-district').value = String(b.district.id); await loadBarrios(b.district.id, b.neighborhood ? b.neighborhood.id : null); }
     }
-    setPreview();
+    setPreview(); setLogoPreview(); renderGallery();
     $('#drawer').classList.add('open'); $('#drawer').setAttribute('aria-hidden', 'false');
     $('#drawerBackdrop').classList.add('open');
     $('#drawer').querySelector('.drawer-scroll').scrollTop = 0;
@@ -174,7 +180,7 @@
       phone: $('#f-phone').value, email: $('#f-email').value, website: $('#f-website').value,
       rating: isNaN(rating) ? null : Math.min(5, Math.max(0, rating)),
       reviews: parseInt($('#f-reviews').value, 10) || 0,
-      featured: $('#f-featured').checked, photo: formPhoto, hours, social,
+      featured: $('#f-featured').checked, photo: formPhoto, logo: formLogo, photos: formPhotos, hours, social,
       districtId: $('#f-district').value ? +$('#f-district').value : null,
       neighborhoodId: $('#f-barrio').value ? +$('#f-barrio').value : null,
       categoryIds: $$('#f-categories input:checked').map(i => +i.dataset.cat),
@@ -202,7 +208,7 @@
     $('#drawerBackdrop').addEventListener('click', closeDrawer);
     $('#f-district').addEventListener('change', e => loadBarrios(e.target.value ? +e.target.value : null));
     $('#f-metro-filter').addEventListener('input', e => filterMetros(e.target.value));
-    $('#f-name').addEventListener('input', () => { if (!formPhoto) setPreview(); });
+    $('#f-name').addEventListener('input', () => { if (!formPhoto) setPreview(); if (!formLogo) setLogoPreview(); });
     $('#f-photo-btn').addEventListener('click', () => $('#f-photo-input').click());
     $('#f-photo-clear').addEventListener('click', () => { formPhoto = null; setPreview(); });
     $('#f-photo-input').addEventListener('change', async e => {
@@ -215,6 +221,32 @@
         formPhoto = r.url; setPreview(); toast('Imagen subida');
       } catch (err) { toast(err.status === 401 ? 'Sesión expirada' : 'No se pudo subir la imagen', 'err'); }
       finally { $('#f-photo-btn').disabled = false; e.target.value = ''; }
+    });
+    // Logo
+    $('#f-logo-btn').addEventListener('click', () => $('#f-logo-input').click());
+    $('#f-logo-clear').addEventListener('click', () => { formLogo = null; setLogoPreview(); });
+    $('#f-logo-input').addEventListener('change', async e => {
+      const file = e.target.files[0];
+      if (!file) return;
+      $('#f-logo-btn').disabled = true;
+      try { const dataUrl = await resizeImage(file, 480); const r = await api.upload(dataUrl); formLogo = r.url; setLogoPreview(); toast('Logo subido'); }
+      catch (err) { toast(err.status === 401 ? 'Sesión expirada' : 'No se pudo subir el logo', 'err'); }
+      finally { $('#f-logo-btn').disabled = false; e.target.value = ''; }
+    });
+    // Galería de fotos de servicios
+    $('#f-photos-gallery').addEventListener('click', e => {
+      if (e.target.closest('#f-photos-add')) { $('#f-photos-input').click(); return; }
+      const rm = e.target.closest('.pg-remove');
+      if (rm) { formPhotos.splice(+rm.dataset.i, 1); renderGallery(); }
+    });
+    $('#f-photos-input').addEventListener('change', async e => {
+      const files = Array.from(e.target.files || []);
+      if (!files.length) return;
+      for (const file of files) {
+        try { const dataUrl = await resizeImage(file, 1000); const r = await api.upload(dataUrl); formPhotos.push(r.url); renderGallery(); }
+        catch (err) { toast(err.status === 401 ? 'Sesión expirada' : 'No se pudo subir una foto', 'err'); }
+      }
+      toast('Fotos actualizadas'); e.target.value = '';
     });
     document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#drawer').classList.contains('open')) closeDrawer(); });
   }
@@ -351,7 +383,8 @@
 
     $$('#f-hours [data-day]').forEach(i => { const v = f.hours && f.hours[i.dataset.day]; i.value = (v && v !== 'Cerrado') ? v : ''; });
     $$('#f-social [data-social]').forEach(i => { i.value = (f.social && f.social[i.dataset.social]) || ''; });
-    formPhoto = f.photo || null; setPreview();
+    formPhoto = f.photo || null; formLogo = f.photo || null; formPhotos = [];
+    setPreview(); setLogoPreview(); renderGallery();
     renderImportSummary(conf, res, f);
   }
 
@@ -550,14 +583,161 @@
     });
   }
 
+  /* ----------------------- Orden / Clasamentos -------------------------- */
+  const ORD_PAGE = 20;
+  let ordZones = [], ordInited = false;
+  let ordCtx = null, ordItems = [], ordAvailable = [], ordDragId = null;
+
+  function ordResolveContext() {
+    const type = $('#ord-type').value;
+    if (type === 'home') return 'home';
+    const cat = $('#ord-cat').value;
+    if (!cat) return null;
+    const scope = $('#ord-scope').value;
+    if (scope === 'zona') { const z = $('#ord-zona').value; return z ? `cat:${cat}:zona:${z}` : null; }
+    if (scope === 'mun') { const m = $('#ord-mun').value; return m ? `cat:${cat}:mun:${m}` : null; }
+    return `cat:${cat}`;
+  }
+  function ordSyncFields() {
+    const isCat = $('#ord-type').value === 'cat';
+    const scope = $('#ord-scope').value;
+    $('#ord-cat-field').style.display = isCat ? '' : 'none';
+    $('#ord-scope-field').style.display = isCat ? '' : 'none';
+    $('#ord-zona-field').style.display = isCat && scope === 'zona' ? '' : 'none';
+    $('#ord-mun-field').style.display = isCat && scope === 'mun' ? '' : 'none';
+  }
+  function ordFillSelectors() {
+    $('#ord-cat').innerHTML = '<option value="">Elige servicio…</option>' + categoriesTree.map(c => `<option value="${attr(c.slug)}">${esc(c.name)}</option>`).join('');
+    $('#ord-mun').innerHTML = '<option value="">Elige municipio/distrito…</option>' + districts.map(d => `<option value="${attr(d.slug)}">${esc(d.name)}</option>`).join('');
+    $('#ord-zona').innerHTML = '<option value="">Elige zona…</option>' + ordZones.map(z => `<option value="${attr(z.slug)}">${esc(z.name)}</option>`).join('');
+  }
+  function ordThumb(b) { return attr(b.cover || D.placeholderImage(b.name)); }
+  function ordSlot(b, pos) {
+    return `<li class="ord-slot" draggable="true" data-id="${attr(b.id)}">
+      <span class="ord-pos">${pos + 1}</span>
+      <span class="ord-thumb"><img src="${ordThumb(b)}" alt="" /></span>
+      <span class="ord-info"><span class="ord-name">${esc(b.name)}${b.featured ? ' ★' : ''}</span><span class="ord-zone">${esc(b.zone || '')}</span></span>
+      <span class="ord-slot-actions">
+        <button class="icon-btn" data-ord="up" title="Subir">▲</button>
+        <button class="icon-btn" data-ord="down" title="Bajar">▼</button>
+        ${ordCtx === 'home' ? `<button class="icon-btn danger" data-ord="remove" title="Quitar de destacadas">${IC.trash}</button>` : ''}
+      </span>
+    </li>`;
+  }
+  function ordRenderBoard() {
+    const board = $('#ord-board');
+    if (ordCtx) $('#ord-status').textContent = ordStatusText(ordCtx === 'home' ? 'home' : 'cat');
+    if (!ordItems.length) { board.innerHTML = `<div class="ord-empty">No hay empresas en este contexto${ordCtx === 'home' ? '. Añádelas abajo.' : ' todavía.'}</div>`; return; }
+    const pages = Math.ceil(ordItems.length / ORD_PAGE);
+    let html = '';
+    for (let pg = 0; pg < pages; pg++) {
+      const slice = ordItems.slice(pg * ORD_PAGE, (pg + 1) * ORD_PAGE);
+      html += `<div class="ord-page"><div class="ord-page-head"><b>Página ${pg + 1}</b><span class="ord-page-count">${slice.length} ${slice.length === 1 ? 'empresa' : 'empresas'}</span></div>`;
+      html += `<ul class="ord-slots" data-page="${pg}">${slice.map((b, i) => ordSlot(b, pg * ORD_PAGE + i)).join('')}</ul></div>`;
+    }
+    board.innerHTML = html;
+  }
+  function ordRenderAdd() {
+    const q = norm($('#ord-add-search').value || '');
+    const list = ordAvailable.filter(b => !q || norm(b.name).includes(q));
+    $('#ord-add-list').innerHTML = list.length
+      ? list.slice(0, 120).map(b => `
+        <div class="ord-add-row"><span class="ord-thumb"><img src="${ordThumb(b)}" alt=""></span><span class="ord-name">${esc(b.name)}</span><button class="btn btn-soft btn-sm" data-add="${attr(b.id)}">Añadir</button></div>`).join('')
+      : '<p class="muted" style="padding:8px 4px">No hay más empresas para añadir.</p>';
+  }
+  function ordStatusText(kind) {
+    if (kind === 'home') return `Empresas destacadas del home — arrastra para ordenar. ${ordItems.length} en la lista · 20 por página.`;
+    return `${ordItems.length} ${ordItems.length === 1 ? 'empresa' : 'empresas'} · arrastra para fijar el orden. Por defecto es aleatorio; fijar aquí lo sobrescribe.`;
+  }
+  async function ordLoad() {
+    ordCtx = ordResolveContext();
+    const board = $('#ord-board'), status = $('#ord-status'), add = $('#ord-add');
+    if (!ordCtx) { board.innerHTML = ''; add.style.display = 'none'; status.textContent = 'Elige servicio, zona o municipio para ver el clasamento.'; return; }
+    status.textContent = 'Cargando…';
+    try {
+      const d = await api.getPlacements(ordCtx);
+      ordItems = d.items || []; ordAvailable = d.available || [];
+      status.textContent = ordStatusText(d.kind);
+      add.style.display = d.kind === 'home' ? '' : 'none';
+      ordRenderBoard(); if (d.kind === 'home') ordRenderAdd();
+    } catch (e) {
+      status.textContent = 'No se pudo cargar el clasamento.';
+      if (e.status === 401) location.replace('login.html');
+    }
+  }
+  async function ordSave() {
+    if (!ordCtx) return;
+    $('#ord-save').disabled = true;
+    try { await api.setPlacements(ordCtx, ordItems.map(b => b.id)); toast('Orden guardado'); }
+    catch (e) { toast(e.status === 401 ? 'Sesión expirada' : 'No se pudo guardar el orden', 'err'); }
+    finally { $('#ord-save').disabled = false; }
+  }
+  async function ordReset() {
+    if (!ordCtx) return;
+    if (!confirm('¿Restablecer este contexto a orden aleatorio? Se borrará el orden manual guardado.')) return;
+    try { await api.clearPlacements(ordCtx); toast('Restablecido a aleatorio'); await ordLoad(); }
+    catch (e) { toast(e.status === 401 ? 'Sesión expirada' : 'No se pudo restablecer', 'err'); }
+  }
+  function bindOrden() {
+    ['ord-type', 'ord-cat', 'ord-scope', 'ord-zona', 'ord-mun'].forEach(id => $('#' + id).addEventListener('change', () => { ordSyncFields(); ordLoad(); }));
+    $('#ord-save').addEventListener('click', ordSave);
+    $('#ord-reset').addEventListener('click', ordReset);
+    $('#ord-add-search').addEventListener('input', ordRenderAdd);
+    $('#ord-add-list').addEventListener('click', e => {
+      const btn = e.target.closest('button[data-add]'); if (!btn) return;
+      const idx = ordAvailable.findIndex(b => b.id === btn.dataset.add); if (idx < 0) return;
+      const [b] = ordAvailable.splice(idx, 1);
+      ordItems.splice(Math.floor(Math.random() * (ordItems.length + 1)), 0, b); // se populează random
+      ordRenderBoard(); ordRenderAdd();
+    });
+    const board = $('#ord-board');
+    board.addEventListener('click', e => {
+      const btn = e.target.closest('button[data-ord]'); if (!btn) return;
+      const slot = btn.closest('.ord-slot'); const i = ordItems.findIndex(x => x.id === slot.dataset.id); if (i < 0) return;
+      const act = btn.dataset.ord;
+      if (act === 'up' && i > 0) { const t = ordItems[i - 1]; ordItems[i - 1] = ordItems[i]; ordItems[i] = t; ordRenderBoard(); }
+      else if (act === 'down' && i < ordItems.length - 1) { const t = ordItems[i + 1]; ordItems[i + 1] = ordItems[i]; ordItems[i] = t; ordRenderBoard(); }
+      else if (act === 'remove') { const [b] = ordItems.splice(i, 1); ordAvailable.unshift(b); ordRenderBoard(); ordRenderAdd(); }
+    });
+    board.addEventListener('dragstart', e => { const s = e.target.closest('.ord-slot'); if (!s) return; ordDragId = s.dataset.id; s.classList.add('dragging'); if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'; });
+    board.addEventListener('dragend', () => { $$('.ord-slot', board).forEach(x => x.classList.remove('dragging', 'drop-target')); ordDragId = null; });
+    board.addEventListener('dragover', e => {
+      const s = e.target.closest('.ord-slot'); if (!s || !ordDragId) return;
+      e.preventDefault();
+      $$('.ord-slot.drop-target', board).forEach(x => x.classList.remove('drop-target'));
+      s.classList.add('drop-target');
+    });
+    board.addEventListener('drop', e => {
+      const s = e.target.closest('.ord-slot'); if (!s || !ordDragId) return;
+      e.preventDefault();
+      const targetId = s.dataset.id; if (targetId === ordDragId) return;
+      const from = ordItems.findIndex(x => x.id === ordDragId); if (from < 0) return;
+      const [moved] = ordItems.splice(from, 1);
+      let to = ordItems.findIndex(x => x.id === targetId);
+      const rect = s.getBoundingClientRect();
+      if (e.clientY > rect.top + rect.height / 2) to += 1;
+      ordItems.splice(to, 0, moved);
+      ordRenderBoard();
+    });
+  }
+  async function ordEnter() {
+    if (!ordInited) {
+      try { ordZones = await api.zones(); } catch { ordZones = []; }
+      ordFillSelectors(); ordSyncFields(); ordInited = true;
+    }
+    ordLoad();
+  }
+
   /* --------------------------- View switching --------------------------- */
   function switchView(v) {
     $$('.admin-nav-btn').forEach(b => b.classList.toggle('active', b.dataset.view === v));
     $('#view-negocios').classList.toggle('hidden', v !== 'negocios');
     $('#view-taxonomia').classList.toggle('hidden', v !== 'taxonomia');
+    $('#view-orden').classList.toggle('hidden', v !== 'orden');
     $('#view-stats').classList.toggle('hidden', v !== 'stats');
     if (v === 'stats') renderStats();
     if (v === 'taxonomia') renderTaxonomy();
+    if (v === 'orden') ordEnter();
   }
 
   /* ------------------------------- Boot --------------------------------- */
@@ -570,7 +750,7 @@
     try { await loadTaxonomy(); } catch { toast('No se pudo cargar la taxonomía', 'err'); }
     fillDistrictSelects(); buildCategoryChecklist(); buildMetroChecklist();
 
-    bindBusinesses(); bindDrawer(); bindStats(); bindImport(); bindTaxonomy();
+    bindBusinesses(); bindDrawer(); bindStats(); bindImport(); bindTaxonomy(); bindOrden();
     $$('.admin-nav-btn').forEach(b => b.addEventListener('click', () => switchView(b.dataset.view)));
     $('#logoutBtn').addEventListener('click', async e => { e.preventDefault(); try { await api.logout(); } catch {} location.replace('login.html'); });
     $('#adminApp').classList.remove('hidden');

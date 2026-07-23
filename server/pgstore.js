@@ -21,9 +21,10 @@ const TABLES = {
   categories:          ['id', 'slug', 'name', 'parent_id', 'icon', 'intro', 'display_order', 'in_nav'],
   neighborhoods:       ['id', 'slug', 'name', 'district_id'],
   metros:              ['id', 'slug', 'name', 'lines'],
-  businesses:          ['id', 'name', 'address', 'about', 'district_id', 'neighborhood_id', 'phone', 'email', 'website', 'hours', 'social', 'rating', 'reviews', 'featured', 'photo', 'created_at'],
+  businesses:          ['id', 'name', 'address', 'about', 'district_id', 'neighborhood_id', 'phone', 'email', 'website', 'hours', 'social', 'rating', 'reviews', 'featured', 'photo', 'logo', 'photos', 'created_at'],
   business_categories: ['business_id', 'category_id'],
   business_metros:     ['business_id', 'metro_id'],
+  placements:          ['context', 'business_id', 'position'],
 };
 const TABLE_NAMES = Object.keys(TABLES);
 
@@ -47,7 +48,7 @@ CREATE TABLE IF NOT EXISTS businesses (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, address TEXT, about TEXT,
   district_id INTEGER, neighborhood_id INTEGER, phone TEXT, email TEXT, website TEXT,
   hours TEXT, social TEXT, rating DOUBLE PRECISION, reviews INTEGER DEFAULT 0,
-  featured INTEGER DEFAULT 0, photo TEXT, created_at BIGINT
+  featured INTEGER DEFAULT 0, photo TEXT, logo TEXT, photos TEXT, created_at BIGINT
 );
 CREATE TABLE IF NOT EXISTS business_categories (
   business_id TEXT NOT NULL, category_id INTEGER NOT NULL, PRIMARY KEY (business_id, category_id)
@@ -55,7 +56,18 @@ CREATE TABLE IF NOT EXISTS business_categories (
 CREATE TABLE IF NOT EXISTS business_metros (
   business_id TEXT NOT NULL, metro_id INTEGER NOT NULL, PRIMARY KEY (business_id, metro_id)
 );
+CREATE TABLE IF NOT EXISTS placements (
+  context TEXT NOT NULL, business_id TEXT NOT NULL, position INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (context, business_id)
+);
 `;
+
+/* Coloane adăugate ulterior — Postgres CREATE TABLE IF NOT EXISTS nu le adaugă
+   pe un tabel existent, deci le migrăm explicit în ensureSchema(). */
+const ALTERS = [
+  `ALTER TABLE businesses ADD COLUMN IF NOT EXISTS logo TEXT`,
+  `ALTER TABLE businesses ADD COLUMN IF NOT EXISTS photos TEXT`,
+];
 
 let pool = null;
 let enabled = false;
@@ -84,6 +96,10 @@ async function ensureSchema() {
   // Rulăm fiecare CREATE separat (compatibil și cu pooler-ul, și cu pg-mem).
   for (const stmt of DDL.split(';').map(s => s.trim()).filter(Boolean)) {
     await pool.query(stmt);
+  }
+  // Migrări de coloane pe tabele deja existente (idempotente).
+  for (const stmt of ALTERS) {
+    try { await pool.query(stmt); } catch (e) { console.error('⚠️  ALTER Postgres:', e.message); }
   }
 }
 

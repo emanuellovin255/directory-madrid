@@ -849,3 +849,91 @@ main { display: block; }
 
 @media (max-width: 860px) { .mega-zonas { min-width: 0; } }
 
+
+/* ===================== Logo / galería / paginación ===================== */
+/* Logo suprapus pe cardul de negocio (colț jos-stânga peste copertă). */
+.card-logo {
+  position: absolute; left: 10px; bottom: 10px; z-index: 2;
+  width: 46px; height: 46px; border-radius: 11px; overflow: hidden;
+  background: #fff; border: 1px solid var(--line);
+  box-shadow: 0 2px 8px rgba(15,23,42,.18); display: grid; place-items: center;
+}
+.card-logo img { width: 100%; height: 100%; object-fit: contain; background: #fff; }
+
+/* Logo în ficha de negocio. */
+.biz-logo {
+  width: 64px; height: 64px; border-radius: 14px; overflow: hidden; background: #fff;
+  border: 1px solid var(--line); box-shadow: var(--sh-sm); display: grid; place-items: center;
+  margin-bottom: 12px;
+}
+.biz-logo img { width: 100%; height: 100%; object-fit: contain; }
+
+/* Galería de trabajos en la ficha. */
+.biz-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+.biz-gallery-item { display: block; aspect-ratio: 4/3; border-radius: var(--r-sm); overflow: hidden; border: 1px solid var(--line); background: var(--surface-2); }
+.biz-gallery-item img { width: 100%; height: 100%; object-fit: cover; transition: transform .35s ease; }
+.biz-gallery-item:hover img { transform: scale(1.05); }
+
+/* Paginación. */
+.pagination { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 10px; margin: 28px 0 6px; }
+.pg-nums { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.pg-num, .pg-arrow {
+  display: inline-flex; align-items: center; gap: 6px; min-width: 40px; height: 40px; padding: 0 12px;
+  justify-content: center; border-radius: var(--r-sm); border: 1px solid var(--line);
+  background: var(--surface); color: var(--ink-2); font-weight: 700; font-size: 14px;
+}
+.pg-num:hover, .pg-arrow:hover { border-color: var(--accent); color: var(--accent-700); background: var(--accent-050); }
+.pg-num.is-current { background: var(--accent); color: #fff; border-color: var(--accent); box-shadow: 0 2px 8px rgba(var(--accent-rgb),.35); }
+.pg-gap { color: var(--muted-2); padding: 0 2px; }
+.pg-arrow svg { width: 16px; height: 16px; }
+@media (max-width: 560px) { .pg-arrow span { display: none; } }
+
+/* ===================== Admin: editor de fotos (galería) ================ */
+.photo-gallery { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+.pg-thumb { position: relative; width: 84px; height: 84px; border-radius: var(--r-sm); overflow: hidden; border: 1px solid var(--line); background: var(--surface-2); }
+.pg-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.pg-thumb .pg-remove {
+  position: absolute; top: 3px; right: 3px; width: 22px; height: 22px; border-radius: 50%;
+  border: 0; background: rgba(15,23,42,.72); color: #fff; cursor: pointer; font-size: 14px; line-height: 1;
+  display: grid; place-items: center;
+}
+.pg-thumb .pg-remove:hover { background: var(--accent); }
+.pg-add-tile { width: 84px; height: 84px; border-radius: var(--r-sm); border: 1.5px dashed var(--muted-2); background: var(--surface-2); color: var(--muted); cursor: pointer; display: grid; place-items: center; font-size: 26px; }
+.pg-add-tile:hover { border-color: var(--accent); color: var(--accent-700); background: var(--accent-050); }
+
+/* ===================== Admin: board de clasament ====================== */
+.ord-toolbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; margin-bottom: 18px; }
+.ord-toolbar .field { min-width: 180px; }
+.ord-toolbar label { display: block; font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 5px; }
+.ord-hint { color: var(--muted); font-size: 13px; margin: 0 0 16px; }
+.ord-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-left: auto; }
+
+.ord-board { display: flex; flex-direction: column; gap: 18px; }
+.ord-page { border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); overflow: hidden; }
+.ord-page-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 16px; background: var(--surface-2); border-bottom: 1px solid var(--line); }
+.ord-page-head b { font-size: 14px; color: var(--ink); }
+.ord-page-head .ord-page-count { font-size: 12px; color: var(--muted); }
+.ord-slots { list-style: none; margin: 0; padding: 8px; display: flex; flex-direction: column; gap: 6px; min-height: 46px; }
+
+.ord-slot { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); cursor: grab; }
+.ord-slot:hover { border-color: var(--muted-2); }
+.ord-slot.dragging { opacity: .45; }
+.ord-slot.drop-target { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-100); }
+.ord-pos { flex: none; width: 30px; text-align: center; font-weight: 800; color: var(--accent-700); font-size: 15px; }
+.ord-thumb { flex: none; width: 40px; height: 40px; border-radius: 9px; overflow: hidden; background: var(--surface-2); border: 1px solid var(--line); }
+.ord-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.ord-info { min-width: 0; flex: 1; }
+.ord-name { font-weight: 700; font-size: 14px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ord-zone { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ord-slot-actions { display: flex; gap: 4px; flex: none; }
+.ord-drag-handle { color: var(--muted-2); cursor: grab; padding: 0 4px; }
+.ord-empty { padding: 26px; text-align: center; color: var(--muted); }
+
+.ord-add { margin-top: 20px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+.ord-add-head { padding: 11px 16px; border-bottom: 1px solid var(--line); background: var(--surface-2); font-weight: 700; font-size: 14px; }
+.ord-add-body { padding: 14px 16px; }
+.ord-add-list { display: flex; flex-direction: column; gap: 5px; max-height: 320px; overflow-y: auto; margin-top: 10px; }
+.ord-add-row { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: var(--r-sm); }
+.ord-add-row:hover { background: var(--surface-2); }
+.ord-add-row .ord-thumb { width: 32px; height: 32px; }
+.ord-add-row .ord-name { flex: 1; }

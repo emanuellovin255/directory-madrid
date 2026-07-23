@@ -83,7 +83,9 @@ db.exec(`
     rating          REAL,
     reviews         INTEGER DEFAULT 0,
     featured        INTEGER DEFAULT 0,
-    photo           TEXT,
+    photo           TEXT,               -- imagine de copertă (compat)
+    logo            TEXT,               -- logo-ul firmei
+    photos          TEXT,               -- JSON array de URL-uri (galerie de servicii)
     created_at      INTEGER,
     FOREIGN KEY (district_id)     REFERENCES districts(id)     ON DELETE SET NULL,
     FOREIGN KEY (neighborhood_id) REFERENCES neighborhoods(id) ON DELETE SET NULL
@@ -102,6 +104,13 @@ db.exec(`
     FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE,
     FOREIGN KEY (metro_id)    REFERENCES metros(id)     ON DELETE CASCADE
   );
+  CREATE TABLE IF NOT EXISTS placements (
+    context     TEXT NOT NULL,        -- 'home' | 'cat:<slug>' | 'cat:<slug>:zona:<z>' | 'cat:<slug>:mun:<d>'
+    business_id TEXT NOT NULL,
+    position    INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (context, business_id),
+    FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE
+  );
   CREATE TABLE IF NOT EXISTS events (
     id   INTEGER PRIMARY KEY AUTOINCREMENT,
     type TEXT NOT NULL,       -- 'visit' | 'view' | 'contact_phone' | 'contact_web'
@@ -112,9 +121,18 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_bm_metro    ON business_metros(metro_id);
   CREATE INDEX IF NOT EXISTS idx_biz_district ON businesses(district_id);
   CREATE INDEX IF NOT EXISTS idx_biz_barrio   ON businesses(neighborhood_id);
+  CREATE INDEX IF NOT EXISTS idx_placements_ctx ON placements(context, position);
   CREATE INDEX IF NOT EXISTS idx_events_type_ts ON events(type, ts);
   CREATE INDEX IF NOT EXISTS idx_events_ref ON events(ref);
 `);
+
+/* Migrare idempotentă: pe un data.db vechi, `CREATE TABLE IF NOT EXISTS` nu adaugă
+   coloanele noi → le adăugăm manual dacă lipsesc (fără a pierde datele). */
+(function migrateBusinessColumns() {
+  const cols = db.prepare('PRAGMA table_info(businesses)').all().map(c => c.name);
+  if (!cols.includes('logo')) db.exec('ALTER TABLE businesses ADD COLUMN logo TEXT');
+  if (!cols.includes('photos')) db.exec('ALTER TABLE businesses ADD COLUMN photos TEXT');
+})();
 
 const DAYS = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'];
 
@@ -313,6 +331,8 @@ function normalizeBusiness(data) {
     reviews: parseInt(data.reviews, 10) || 0,
     featured: data.featured ? 1 : 0,
     photo: data.photo || null,
+    logo: data.logo || null,
+    photos: Array.isArray(data.photos) ? data.photos.filter(Boolean).map(String) : [],
     districtId,
     neighborhoodId: resolveNeighborhoodId(data, districtId),
     categoryIds: resolveCategoryIds(data),
@@ -328,6 +348,7 @@ function parseBusinessRow(r) {
     hours: safeParse(r.hours, {}), social: safeParse(r.social, {}),
     rating: r.rating != null ? r.rating : null, reviews: r.reviews || 0,
     featured: !!r.featured, photo: r.photo || null,
+    logo: r.logo || null, photos: safeParse(r.photos, []),
     district_id: r.district_id || null, neighborhood_id: r.neighborhood_id || null,
   };
 }
@@ -361,10 +382,10 @@ function uniqueId(base) {
   return id;
 }
 const _insertBiz = db.prepare(`INSERT INTO businesses
-  (id,name,address,about,district_id,neighborhood_id,phone,email,website,hours,social,rating,reviews,featured,photo,created_at)
-  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+  (id,name,address,about,district_id,neighborhood_id,phone,email,website,hours,social,rating,reviews,featured,photo,logo,photos,created_at)
+  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
 const _updateBiz = db.prepare(`UPDATE businesses SET
-  name=?,address=?,about=?,district_id=?,neighborhood_id=?,phone=?,email=?,website=?,hours=?,social=?,rating=?,reviews=?,featured=?,photo=?
+  name=?,address=?,about=?,district_id=?,neighborhood_id=?,phone=?,email=?,website=?,hours=?,social=?,rating=?,reviews=?,featured=?,photo=?,logo=?,photos=?
   WHERE id=?`);
 
 function insertBusiness(data, forcedId) {
@@ -372,7 +393,7 @@ function insertBusiness(data, forcedId) {
   const id = forcedId || uniqueId(slugify(data.id || b.name));
   _insertBiz.run(id, b.name, b.address, b.about, b.districtId, b.neighborhoodId,
     b.phone, b.email, b.website, JSON.stringify(b.hours), JSON.stringify(b.social),
-    b.rating, b.reviews, b.featured, b.photo, now());
+    b.rating, b.reviews, b.featured, b.photo, b.logo, JSON.stringify(b.photos), now());
   setBusinessCategories(id, b.categoryIds);
   setBusinessMetros(id, b.metroIds);
   return getBusiness(id);
@@ -381,7 +402,7 @@ function businessToInput(b) {
   return {
     name: b.name, address: b.address, about: b.about, hours: b.hours, social: b.social,
     phone: b.phone, email: b.email, website: b.website, rating: b.rating, reviews: b.reviews,
-    featured: b.featured, photo: b.photo,
+    featured: b.featured, photo: b.photo, logo: b.logo, photos: b.photos,
     districtId: b.district ? b.district.id : null,
     neighborhoodId: b.neighborhood ? b.neighborhood.id : null,
     categoryIds: (b.categories || []).map(c => c.id),
@@ -395,7 +416,7 @@ function updateBusiness(id, data) {
   const b = normalizeBusiness(merged);
   _updateBiz.run(b.name, b.address, b.about, b.districtId, b.neighborhoodId,
     b.phone, b.email, b.website, JSON.stringify(b.hours), JSON.stringify(b.social),
-    b.rating, b.reviews, b.featured, b.photo, id);
+    b.rating, b.reviews, b.featured, b.photo, b.logo, JSON.stringify(b.photos), id);
   setBusinessCategories(id, b.categoryIds);
   setBusinessMetros(id, b.metroIds);
   return getBusiness(id);
@@ -451,7 +472,9 @@ function listBusinesses(filter) {
   const sql = `SELECT b.* FROM businesses b ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
     ORDER BY b.featured DESC, b.rating DESC, b.name ASC`;
   const rows = db.prepare(sql).all(...params);
-  const out = rows.map(r => attachRelations(parseBusinessRow(r)));
+  let out = rows.map(r => attachRelations(parseBusinessRow(r)));
+  // Filtru pe zonă geografică (derivată din municipiu) — pentru contexte nișă × zonă.
+  if (filter.zona) out = out.filter(b => b.district && b.district.zona === filter.zona);
   return filter.limit ? out.slice(0, filter.limit) : out;
 }
 
@@ -466,6 +489,70 @@ function replaceAll(items) {
     out.push(insertBusiness(item, id));
   });
   return out;
+}
+
+/* ============================ PLACEMENTS ============================= */
+/* Clasament manual per „context": home | cat:<slug> | cat:<slug>:zona:<z> |
+   cat:<slug>:mun:<d>. Ordinea implicită e un shuffle determinist (hash), iar
+   placement-urile trec peste el pentru contextul lor. */
+const _delPlac = db.prepare('DELETE FROM placements WHERE context=?');
+const _insPlac = db.prepare('INSERT OR REPLACE INTO placements (context, business_id, position) VALUES (?,?,?)');
+const _existsBiz = db.prepare('SELECT 1 FROM businesses WHERE id=?');
+
+function getPlacements(context) {
+  return db.prepare('SELECT business_id, position FROM placements WHERE context=? ORDER BY position').all(String(context || ''));
+}
+function countPlacement(context) {
+  return db.prepare('SELECT COUNT(*) c FROM placements WHERE context=?').get(String(context || '')).c;
+}
+function setPlacements(context, ids) {
+  const ctx = String(context || '');
+  db.exec('BEGIN');
+  try {
+    _delPlac.run(ctx);
+    let pos = 0;
+    (ids || []).forEach(id => { const sid = String(id); if (_existsBiz.get(sid)) _insPlac.run(ctx, sid, pos++); });
+    db.exec('COMMIT');
+  } catch (e) { try { db.exec('ROLLBACK'); } catch { /* ignoră */ } throw e; }
+  return getPlacements(ctx);
+}
+function clearPlacements(context) { return _delPlac.run(String(context || '')).changes > 0; }
+
+/* Hash FNV-1a → cheie de sortare pseudo-aleatorie, stabilă per (business, context). */
+function shuffleKey(id, context) {
+  let h = 0x811c9dc5;
+  const s = String(id) + '|' + String(context);
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return h >>> 0;
+}
+/* Ordonează o listă de businesses pentru un context: pinned (din placements) întâi
+   în ordinea `position`, apoi restul după shuffle-ul determinist. */
+function orderByContext(list, context) {
+  const posMap = new Map(getPlacements(context).map(p => [p.business_id, p.position]));
+  const pinned = [], rest = [];
+  (list || []).forEach(b => { (posMap.has(b.id) ? pinned : rest).push(b); });
+  pinned.sort((a, b) => posMap.get(a.id) - posMap.get(b.id));
+  rest.sort((a, b) => (shuffleKey(a.id, context) - shuffleKey(b.id, context)) || (a.name < b.name ? -1 : 1));
+  return pinned.concat(rest);
+}
+function paginate(items, page, pageSize) {
+  const ps = pageSize || 20;
+  const total = items.length;
+  const pages = Math.max(1, Math.ceil(total / ps));
+  const p = Math.min(Math.max(1, parseInt(page, 10) || 1), pages);
+  return { items: items.slice((p - 1) * ps, p * ps), total, page: p, pages, pageSize: ps };
+}
+/* Listare ordonată pe context + paginare. baseFilter = filtrul din listBusinesses. */
+function listForContext(context, baseFilter, opts) {
+  opts = opts || {};
+  const ordered = orderByContext(listBusinesses(baseFilter || {}), context);
+  return paginate(ordered, opts.page, opts.pageSize || 20);
+}
+/* Home: doar membership (businesses din placements 'home'), în ordinea position. */
+function listHome(opts) {
+  opts = opts || {};
+  const items = getPlacements('home').map(p => getBusiness(p.business_id)).filter(Boolean);
+  return paginate(items, opts.page, opts.pageSize || 20);
 }
 
 /* ------------------------------ Events -------------------------------- */
@@ -537,6 +624,8 @@ module.exports = {
   listMetros, getMetro, getMetroBySlug, insertMetro, updateMetro, removeMetro, countMetros,
   // businesses
   insertBusiness, updateBusiness, removeBusiness, setFeatured, getBusiness, listBusinesses, countBusinesses, replaceAll,
+  // placements / clasament
+  getPlacements, setPlacements, clearPlacements, countPlacement, orderByContext, listForContext, listHome,
   // events / stats
   recordEvent, countEvents, clearEvents, getStats, getMonthlySeries,
 };

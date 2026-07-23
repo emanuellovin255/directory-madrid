@@ -42,6 +42,12 @@ function bizPhoto(b) {
   const primary = (b.categories || []).find(c => !c.parent_id) || (b.categories || [])[0];
   return svgPlaceholder(b.name, primary ? primary.name : SITE.name);
 }
+/* Imaginea de copertă a cardului: prima poză de servicii, apoi `photo`, apoi placeholder. */
+function bizCover(b) {
+  if (b.photos && b.photos.length) return b.photos[0];
+  return bizPhoto(b);
+}
+function bizLogo(b) { return b.logo || null; }
 
 /* Imagen de la tarjeta de servicio (home). Las categorías clásicas usan foto
    real (/assets/img/cat-<slug>.jpg); las nuevas usan una ilustración SVG
@@ -99,7 +105,8 @@ function businessCard(ctx, b) {
       <a class="card-media" href="${href}">
         ${b.featured ? `<span class="badge-featured">${icon('star')}Destacado</span>` : ''}
         ${b.rating ? `<span class="card-rating">${icon('star')}${b.rating.toFixed(1)}</span>` : ''}
-        <img src="${attr(bizPhoto(b))}" alt="${attr(b.name)}" loading="lazy" />
+        ${bizLogo(b) ? `<span class="card-logo"><img src="${attr(bizLogo(b))}" alt="${attr(b.name)} logo" loading="lazy" /></span>` : ''}
+        <img class="card-cover" src="${attr(bizCover(b))}" alt="${attr(b.name)}" loading="lazy" />
       </a>
       <div class="card-body">
         <h3 class="card-title"><a href="${href}">${esc(b.name)}</a></h3>
@@ -113,6 +120,29 @@ function grid(ctx, businesses, emptyMsg) {
   if (!businesses.length) return `<div class="empty"><p>${esc(emptyMsg || 'Aún no hay empresas listadas en esta zona.')}</p><p class="empty-sub">¿Eres profesional? Pronto podrás aparecer aquí.</p></div>`;
   return `<div class="grid">${businesses.map(b => businessCard(ctx, b)).join('')}</div>`;
 }
+/* ----------------------------- Paginare ------------------------------ */
+function pageHref(baseHref, p) {
+  if (p <= 1) return baseHref;
+  return baseHref + (baseHref.indexOf('?') >= 0 ? '&' : '?') + 'page=' + p;
+}
+function paginationNav(ctx, pg) {
+  if (!pg || pg.pages <= 1) return '';
+  const { page, pages, baseHref } = pg;
+  const win = 2;
+  const nums = new Set([1, pages, page]);
+  for (let i = page - win; i <= page + win; i++) if (i >= 1 && i <= pages) nums.add(i);
+  const sorted = [...nums].sort((a, b) => a - b);
+  let prev = 0; const cells = [];
+  sorted.forEach(p => {
+    if (prev && p - prev > 1) cells.push('<span class="pg-gap">…</span>');
+    cells.push(`<a class="pg-num${p === page ? ' is-current' : ''}" href="${attr(pageHref(baseHref, p))}"${p === page ? ' aria-current="page"' : ''}>${p}</a>`);
+    prev = p;
+  });
+  const prevLink = page > 1 ? `<a class="pg-arrow pg-prev" rel="prev" href="${attr(pageHref(baseHref, page - 1))}">${icon('arrow')}<span>Anterior</span></a>` : '';
+  const nextLink = page < pages ? `<a class="pg-arrow pg-next" rel="next" href="${attr(pageHref(baseHref, page + 1))}"><span>Siguiente</span>${icon('arrow')}</a>` : '';
+  return `<nav class="pagination" aria-label="Paginación">${prevLink}<div class="pg-nums">${cells.join('')}</div>${nextLink}</nav>`;
+}
+
 function chipRow(title, links) {
   links = (links || []).filter(Boolean);
   if (!links.length) return '';
@@ -245,6 +275,8 @@ function renderLayout(ctx, page) {
 <title>${esc(page.title)}</title>
 <meta name="description" content="${attr(page.description || '')}">
 <link rel="canonical" href="${attr(canonical)}">
+${page.prev ? `<link rel="prev" href="${attr(page.prev)}">` : ''}
+${page.next ? `<link rel="next" href="${attr(page.next)}">` : ''}
 <meta name="robots" content="index,follow">
 <meta property="og:type" content="${page.ogType || 'website'}">
 <meta property="og:site_name" content="${attr(SITE.name)}">
@@ -273,27 +305,35 @@ ${page.inlineData ? `<script>window.__RM__=${JSON.stringify(page.inlineData)};</
 /* ------------------------- Pagini de listare ------------------------- */
 function listingPage(ctx, opts) {
   const businesses = opts.businesses;
+  const pg = opts.pagination;
+  const total = opts.total != null ? opts.total : businesses.length;
   const body = `
     <div class="container">
       ${breadcrumb(ctx, opts.crumbs)}
       <header class="page-head">
         <h1>${esc(opts.h1)}</h1>
         ${opts.intro ? `<p class="page-intro">${esc(opts.intro)}</p>` : ''}
-        <p class="page-count">${businesses.length} ${businesses.length === 1 ? 'empresa' : 'empresas'}</p>
+        <p class="page-count">${total} ${total === 1 ? 'empresa' : 'empresas'}${pg && pg.pages > 1 ? ` · página ${pg.page} de ${pg.pages}` : ''}</p>
       </header>
       ${opts.subchips || ''}
       ${grid(ctx, businesses, opts.emptyMsg)}
+      ${paginationNav(ctx, pg)}
       ${(opts.related || []).join('')}
     </div>`;
+  const onPageN = pg && pg.page > 1;
+  const canonical = onPageN ? opts.canonical + '?page=' + pg.page : opts.canonical;
   return renderLayout(ctx, {
-    title: opts.title, description: opts.description, canonical: opts.canonical,
+    title: onPageN ? opts.title.replace(' | ', ` — página ${pg.page} | `) : opts.title,
+    description: opts.description, canonical,
+    prev: pg && pg.page > 1 ? abs(ctx, pageHref(pg.baseHref, pg.page - 1)) : null,
+    next: pg && pg.page < pg.pages ? abs(ctx, pageHref(pg.baseHref, pg.page + 1)) : null,
     jsonLd: [jsonLdBreadcrumb(ctx, opts.crumbs), businesses.length ? jsonLdItemList(ctx, businesses) : null].concat(opts.jsonLd || []),
     body,
   });
 }
 
-function renderCategory(ctx, category) {
-  const businesses = DB.listBusinesses({ categorySlug: category.slug });
+function renderCategory(ctx, category, page) {
+  const r = DB.listForContext('cat:' + category.slug, { categorySlug: category.slug }, { page });
   const distritos = DB.listDistritos();
   const zones = DB.listZones();
   const subs = DB.getCategory(category.id) && DB.getCategoryTree().find(c => c.id === category.id);
@@ -315,13 +355,15 @@ function renderCategory(ctx, category) {
     h1: `${category.name} en Madrid`,
     intro: category.intro,
     crumbs,
-    businesses, subchips, related,
+    businesses: r.items, total: r.total,
+    pagination: { page: r.page, pages: r.pages, baseHref: `/${category.slug}` },
+    subchips, related,
     emptyMsg: `Aún no hay ${category.name.toLowerCase()} listados. Vuelve pronto.`,
   });
 }
 
-function renderDistrict(ctx, category, district) {
-  const businesses = DB.listBusinesses({ categorySlug: category.slug, districtSlug: district.slug });
+function renderDistrict(ctx, category, district, page) {
+  const r = DB.listForContext('cat:' + category.slug + ':mun:' + district.slug, { categorySlug: category.slug, districtSlug: district.slug }, { page });
   const barrios = DB.listNeighborhoods(district.id);
   const isMuni = district.kind === 'municipio';
   const related = [
@@ -339,13 +381,16 @@ function renderDistrict(ctx, category, district) {
       ? `Profesionales de ${category.name.toLowerCase()} en ${district.name}, en la zona ${zonaName(district.zona)} de la Comunidad de Madrid.`
       : `Profesionales de ${category.name.toLowerCase()} en el distrito de ${district.name}. Elige tu barrio para afinar la búsqueda.`,
     crumbs: [{ name: 'Inicio', href: '/' }, { name: category.name, href: `/${category.slug}` }, { name: district.name }],
-    businesses, related,
+    businesses: r.items, total: r.total,
+    pagination: { page: r.page, pages: r.pages, baseHref: `/${category.slug}/${district.slug}` },
+    related,
     emptyMsg: `Aún no hay ${category.name.toLowerCase()} listados en ${district.name}.`,
   });
 }
 
-function renderBarrio(ctx, category, district, barrio) {
-  const businesses = DB.listBusinesses({ categorySlug: category.slug, districtSlug: district.slug, barrioSlug: barrio.slug });
+function renderBarrio(ctx, category, district, barrio, page) {
+  // Barrio-ul moștenește contextul municipiului (ordinea manuală de la mun se aplică și aici).
+  const r = DB.listForContext('cat:' + category.slug + ':mun:' + district.slug, { categorySlug: category.slug, districtSlug: district.slug, barrioSlug: barrio.slug }, { page });
   const siblings = DB.listNeighborhoods(district.id).filter(b => b.id !== barrio.id);
   const related = [
     chipRow(`Otros barrios de ${district.name}`, siblings.map(b => ({ name: b.name, href: `/${category.slug}/${district.slug}/${b.slug}` }))),
@@ -357,13 +402,16 @@ function renderBarrio(ctx, category, district, barrio) {
     h1: `${category.name} en ${barrio.name}`,
     intro: `${category.name} en el barrio de ${barrio.name} (${district.name}). Profesionales de proximidad.`,
     crumbs: [{ name: 'Inicio', href: '/' }, { name: category.name, href: `/${category.slug}` }, { name: district.name, href: `/${category.slug}/${district.slug}` }, { name: barrio.name }],
-    businesses, related,
+    businesses: r.items, total: r.total,
+    pagination: { page: r.page, pages: r.pages, baseHref: `/${category.slug}/${district.slug}/${barrio.slug}` },
+    related,
     emptyMsg: `Aún no hay ${category.name.toLowerCase()} listados en ${barrio.name}.`,
   });
 }
 
-function renderCategoryMetro(ctx, category, metro) {
-  const businesses = DB.listBusinesses({ categorySlug: category.slug, metroSlug: metro.slug });
+function renderCategoryMetro(ctx, category, metro, page) {
+  // Metro: fără board manual — shuffle determinist stabil + paginare.
+  const r = DB.listForContext('cat:' + category.slug + ':metro:' + metro.slug, { categorySlug: category.slug, metroSlug: metro.slug }, { page });
   const otherCats = DB.getCategoryTree().filter(c => c.id !== category.id);
   const related = [
     chipRow(`Otros servicios cerca de ${metro.name}`, otherCats.map(c => ({ name: c.name, href: `/${c.slug}/metro/${metro.slug}` }))),
@@ -377,13 +425,38 @@ function renderCategoryMetro(ctx, category, metro) {
     h1: `${category.name} cerca de ${metro.name}`,
     intro: `Profesionales de ${category.name.toLowerCase()} cerca de la estación de metro ${metro.name}${lines}.`,
     crumbs: [{ name: 'Inicio', href: '/' }, { name: category.name, href: `/${category.slug}` }, { name: 'Metro ' + metro.name }],
-    businesses, related,
+    businesses: r.items, total: r.total,
+    pagination: { page: r.page, pages: r.pages, baseHref: `/${category.slug}/metro/${metro.slug}` },
+    related,
     emptyMsg: `Aún no hay ${category.name.toLowerCase()} listados cerca de ${metro.name}.`,
   });
 }
 
-function renderZoneDistrict(ctx, district) {
-  const businesses = DB.listBusinesses({ districtSlug: district.slug });
+/* Nișă × zonă geografică (Sur/Norte/Este…) — pagină SEO + board manual. */
+function renderCategoryZona(ctx, category, zona, page) {
+  const r = DB.listForContext('cat:' + category.slug + ':zona:' + zona.slug, { categorySlug: category.slug, zona: zona.slug }, { page });
+  const munis = DB.listMunicipios().filter(d => d.zona === zona.slug);
+  const otherZones = (DB.ZONES || []).filter(z => z.slug !== zona.slug);
+  const related = [
+    chipRow(`${category.name} por municipio en ${zona.name}`, munis.map(m => ({ name: m.name, href: `/${category.slug}/${m.slug}` }))),
+    chipRow(`${category.name} en otras zonas`, otherZones.map(z => ({ name: z.name, href: `/${category.slug}/zona/${z.slug}` }))),
+  ];
+  return listingPage(ctx, {
+    title: `${category.name} en la zona ${zona.name} de Madrid | ${SITE.name}`,
+    description: `${category.name} en los municipios de la zona ${zona.name} de la Comunidad de Madrid. Compara profesionales, opiniones y contacto directo.`,
+    canonical: abs(ctx, `/${category.slug}/zona/${zona.slug}`),
+    h1: `${category.name} en la zona ${zona.name}`,
+    intro: `Profesionales de ${category.name.toLowerCase()} en los municipios de la zona ${zona.name} de la Comunidad de Madrid.`,
+    crumbs: [{ name: 'Inicio', href: '/' }, { name: category.name, href: `/${category.slug}` }, { name: 'Zona ' + zona.name }],
+    businesses: r.items, total: r.total,
+    pagination: { page: r.page, pages: r.pages, baseHref: `/${category.slug}/zona/${zona.slug}` },
+    related,
+    emptyMsg: `Aún no hay ${category.name.toLowerCase()} listados en la zona ${zona.name}.`,
+  });
+}
+
+function renderZoneDistrict(ctx, district, page) {
+  const r = DB.listForContext('zona-mun:' + district.slug, { districtSlug: district.slug }, { page });
   const cats = DB.getCategoryTree();
   const barrios = DB.listNeighborhoods(district.id);
   const isMuni = district.kind === 'municipio';
@@ -402,13 +475,15 @@ function renderZoneDistrict(ctx, district) {
     h1: `Profesionales en ${district.name}`,
     intro: `Todos los servicios para el hogar en ${geoIn(district)}: reformas, fontaneros, electricistas, climatización y cerrajeros.`,
     crumbs,
-    businesses, related,
+    businesses: r.items, total: r.total,
+    pagination: { page: r.page, pages: r.pages, baseHref: `/zona/${district.slug}` },
+    related,
     emptyMsg: `Aún no hay empresas listadas en ${district.name}.`,
   });
 }
 
-function renderZoneBarrio(ctx, district, barrio) {
-  const businesses = DB.listBusinesses({ districtSlug: district.slug, barrioSlug: barrio.slug });
+function renderZoneBarrio(ctx, district, barrio, page) {
+  const r = DB.listForContext('zona-bar:' + district.slug + ':' + barrio.slug, { districtSlug: district.slug, barrioSlug: barrio.slug }, { page });
   const cats = DB.getCategoryTree();
   const related = [
     chipRow(`Servicios en ${barrio.name}`, cats.map(c => ({ name: c.name, href: `/${c.slug}/${district.slug}/${barrio.slug}` }))),
@@ -421,7 +496,9 @@ function renderZoneBarrio(ctx, district, barrio) {
     h1: `Profesionales en ${barrio.name}`,
     intro: `Servicios para el hogar en el barrio de ${barrio.name} (${district.name}).`,
     crumbs: [{ name: 'Inicio', href: '/' }, { name: district.name, href: `/zona/${district.slug}` }, { name: barrio.name }],
-    businesses, related,
+    businesses: r.items, total: r.total,
+    pagination: { page: r.page, pages: r.pages, baseHref: `/zona/${district.slug}/${barrio.slug}` },
+    related,
     emptyMsg: `Aún no hay empresas listadas en ${barrio.name}.`,
   });
 }
@@ -472,8 +549,8 @@ function renderMetroIndex(ctx) {
   });
 }
 
-function renderMetroHub(ctx, metro) {
-  const businesses = DB.listBusinesses({ metroSlug: metro.slug });
+function renderMetroHub(ctx, metro, page) {
+  const r = DB.listForContext('metro:' + metro.slug, { metroSlug: metro.slug }, { page });
   const cats = DB.getCategoryTree();
   const lines = (metro.lines || []).length ? ` (líneas ${metro.lines.join(', ')})` : '';
   const related = [chipRow(`Servicios cerca de ${metro.name}`, cats.map(c => ({ name: c.name, href: `/${c.slug}/metro/${metro.slug}` })))];
@@ -484,7 +561,9 @@ function renderMetroHub(ctx, metro) {
     h1: `Profesionales cerca de ${metro.name}`,
     intro: `Servicios para el hogar cerca de la estación de metro ${metro.name}${lines}.`,
     crumbs: [{ name: 'Inicio', href: '/' }, { name: 'Metro', href: '/metro' }, { name: metro.name }],
-    businesses, related,
+    businesses: r.items, total: r.total,
+    pagination: { page: r.page, pages: r.pages, baseHref: `/metro/${metro.slug}` },
+    related,
     emptyMsg: `Aún no hay empresas listadas cerca de ${metro.name}.`,
   });
 }
@@ -504,23 +583,27 @@ function renderBusiness(ctx, b) {
     ? `<a class="chip" href="/${attr(primary.slug)}/metro/${attr(m.slug)}">${icon('metro')}${esc(m.name)}</a>`
     : `<a class="chip" href="/metro/${attr(m.slug)}">${icon('metro')}${esc(m.name)}</a>`).join('');
 
+  const ogImg = bizLogo(b) || (b.photos && b.photos[0]) || b.photo || null;
   const jsonLd = {
     '@context': 'https://schema.org', '@type': 'LocalBusiness', name: b.name,
     description: b.about || undefined, telephone: b.phone || undefined, url: b.website || abs(ctx, '/negocio/' + b.id),
-    image: b.photo ? abs(ctx, b.photo) : undefined,
+    image: ogImg ? abs(ctx, ogImg) : undefined,
+    logo: bizLogo(b) ? abs(ctx, bizLogo(b)) : undefined,
     address: { '@type': 'PostalAddress', streetAddress: b.address || undefined, addressLocality: 'Madrid', addressRegion: 'Madrid', addressCountry: 'ES' },
     areaServed: b.zone || 'Madrid',
     aggregateRating: b.rating ? { '@type': 'AggregateRating', ratingValue: b.rating, reviewCount: b.reviews || 0 } : undefined,
   };
 
+  const gallery = (b.photos || []).filter(Boolean);
   const body = `<div class="container">
       ${breadcrumb(ctx, crumbs)}
       <article class="biz">
         <div class="biz-media">
           ${b.featured ? `<span class="badge-featured">${icon('star')}Destacado</span>` : ''}
-          <img src="${attr(bizPhoto(b))}" alt="${attr(b.name)}" />
+          <img src="${attr(bizCover(b))}" alt="${attr(b.name)}" />
         </div>
         <div class="biz-head">
+          ${bizLogo(b) ? `<span class="biz-logo"><img src="${attr(bizLogo(b))}" alt="${attr(b.name)} logo" /></span>` : ''}
           <h1>${esc(b.name)}</h1>
           <p class="biz-zone">${icon('pin')}${esc(b.address || b.zone || 'Madrid')}</p>
           ${b.rating ? `<p class="biz-rating">${icon('star')}<b>${b.rating.toFixed(1)}</b> · ${b.reviews || 0} opiniones</p>` : ''}
@@ -534,6 +617,7 @@ function renderBusiness(ctx, b) {
       <div class="biz-grid">
         <div class="biz-main">
           ${b.about ? `<section class="biz-section"><h2>Sobre ${esc(b.name)}</h2><p>${esc(b.about)}</p></section>` : ''}
+          ${gallery.length ? `<section class="biz-section"><h2>Trabajos y servicios</h2><div class="biz-gallery">${gallery.map(p => `<a class="biz-gallery-item" href="${attr(p)}" target="_blank" rel="noopener"><img src="${attr(p)}" alt="${attr(b.name)} — trabajo" loading="lazy" /></a>`).join('')}</div></section>` : ''}
           ${b.categories && b.categories.length ? `<section class="biz-section"><h2>Servicios</h2><div class="chips">${catLinks}</div></section>` : ''}
           ${b.metros && b.metros.length ? `<section class="biz-section"><h2>Metro cercano</h2><div class="chips">${metroLinks}</div></section>` : ''}
         </div>
@@ -559,7 +643,7 @@ function renderBusiness(ctx, b) {
   return renderLayout(ctx, {
     title: `${b.name} — ${primary ? primary.name : 'Servicios'} en ${b.zone || 'Madrid'} | ${SITE.name}`,
     description: (b.about ? b.about.slice(0, 155) : `${b.name}, ${primary ? primary.name.toLowerCase() : 'servicios'} en ${b.zone || 'Madrid'}.`),
-    canonical: abs(ctx, '/negocio/' + b.id), ogType: 'business.business', ogImage: b.photo ? abs(ctx, b.photo) : undefined,
+    canonical: abs(ctx, '/negocio/' + b.id), ogType: 'business.business', ogImage: ogImg ? abs(ctx, ogImg) : undefined,
     bodyClass: 'page-biz', body,
     jsonLd: [jsonLdBreadcrumb(ctx, crumbs), jsonLd],
     inlineData: { trackId: b.id },
@@ -573,8 +657,9 @@ function renderHome(ctx) {
   const distritos = DB.listDistritos();
   const zones = DB.listZones();
   const metros = DB.listMetros();
-  const featured = DB.listBusinesses({ featured: true, limit: 6 });
-  const featList = featured.length ? featured : DB.listBusinesses({ limit: 6 });
+  // Destacadas = lista curată „home" (primele 12); fallback: shuffle din toate.
+  let featList = DB.listHome({ pageSize: 12 }).items;
+  if (!featList.length) featList = DB.orderByContext(DB.listBusinesses({}), 'home').slice(0, 12);
   const total = DB.countBusinesses();
 
   const inlineData = {
@@ -635,7 +720,7 @@ function renderHome(ctx) {
 
     <section class="section section-alt">
       <div class="container">
-        <div class="section-head"><h2>Empresas destacadas</h2><a class="section-link" href="/${attr(cats[0] ? cats[0].slug : 'reformas')}">Ver todas ${icon('arrow')}</a></div>
+        <div class="section-head"><h2>Empresas destacadas</h2><a class="section-link" href="/destacadas">Ver todas ${icon('arrow')}</a></div>
         ${grid(ctx, featList)}
       </div>
     </section>
@@ -654,20 +739,50 @@ function renderHome(ctx) {
   });
 }
 
-function renderSearch(ctx, q) {
+function renderSearch(ctx, q, page) {
   const query = String(q || '').trim();
-  const businesses = query ? DB.listBusinesses({ q: query }) : [];
+  const all = query ? DB.listBusinesses({ q: query }) : [];
+  const pageSize = 20;
+  const pages = Math.max(1, Math.ceil(all.length / pageSize));
+  const p = Math.min(Math.max(1, parseInt(page, 10) || 1), pages);
+  const businesses = all.slice((p - 1) * pageSize, p * pageSize);
+  const baseHref = '/buscar?q=' + encodeURIComponent(query);
+  const pg = query && all.length ? { page: p, pages, baseHref } : null;
   const body = `<div class="container">
       ${breadcrumb(ctx, [{ name: 'Inicio', href: '/' }, { name: 'Búsqueda' }])}
       <header class="page-head"><h1>${query ? `Resultados para “${esc(query)}”` : 'Buscar'}</h1>
       <form class="page-search" action="/buscar" method="get"><input type="search" name="q" value="${attr(query)}" placeholder="Fontanero, cerrajero, Salamanca…" autofocus><button class="btn btn-primary">Buscar</button></form>
-      ${query ? `<p class="page-count">${businesses.length} ${businesses.length === 1 ? 'resultado' : 'resultados'}</p>` : ''}</header>
-      ${query ? grid(ctx, businesses, `No hemos encontrado resultados para “${esc(query)}”. Prueba con otro término o explora por servicio.`) : chipRow('Servicios', DB.getCategoryTree().map(c => ({ name: c.name, href: `/${c.slug}` })))}
+      ${query ? `<p class="page-count">${all.length} ${all.length === 1 ? 'resultado' : 'resultados'}${pages > 1 ? ` · página ${p} de ${pages}` : ''}</p>` : ''}</header>
+      ${query ? grid(ctx, businesses, `No hemos encontrado resultados para “${esc(query)}”. Prueba con otro término o explora por servicio.`) + paginationNav(ctx, pg) : chipRow('Servicios', DB.getCategoryTree().map(c => ({ name: c.name, href: `/${c.slug}` })))}
     </div>`;
   return renderLayout(ctx, {
-    title: query ? `“${query}” | ${SITE.name}` : `Buscar | ${SITE.name}`,
+    title: query ? `“${query}”${p > 1 ? ` — página ${p}` : ''} | ${SITE.name}` : `Buscar | ${SITE.name}`,
     description: `Busca profesionales de reformas y servicios para el hogar en Madrid.`,
-    canonical: abs(ctx, '/buscar'), body,
+    canonical: abs(ctx, '/buscar'),
+    prev: pg && p > 1 ? abs(ctx, pageHref(baseHref, p - 1)) : null,
+    next: pg && p < pages ? abs(ctx, pageHref(baseHref, p + 1)) : null,
+    body,
+  });
+}
+
+/* ------------------------- Empresas destacadas ----------------------- */
+/* Pagina publică `/destacadas`: lista curată „home" (membership), paginată 20/pagină. */
+function renderDestacadas(ctx, page) {
+  let r = DB.listHome({ page });
+  if (r.total === 0) r = DB.listForContext('home', {}, { page }); // fallback: toate, shuffle „home"
+  const cats = DB.getCategoryTree();
+  const related = [chipRow('Explora por servicio', cats.map(c => ({ name: c.name, href: `/${c.slug}` })))];
+  return listingPage(ctx, {
+    title: `Empresas destacadas en Madrid | ${SITE.name}`,
+    description: 'Selección de empresas y profesionales destacados de reformas y servicios para el hogar en Madrid.',
+    canonical: abs(ctx, '/destacadas'),
+    h1: 'Empresas destacadas en Madrid',
+    intro: 'Nuestra selección de profesionales de reformas y servicios para el hogar en la Comunidad de Madrid.',
+    crumbs: [{ name: 'Inicio', href: '/' }, { name: 'Empresas destacadas' }],
+    businesses: r.items, total: r.total,
+    pagination: { page: r.page, pages: r.pages, baseHref: '/destacadas' },
+    related,
+    emptyMsg: 'Aún no hay empresas destacadas seleccionadas.',
   });
 }
 
@@ -769,13 +884,16 @@ function renderSitemap(ctx) {
   const urls = ['/'];
   urls.push('/zonas', '/metro', '/buscar');
   urls.push('/aviso-legal', '/privacidad', '/cookies', '/condiciones');
+  urls.push('/destacadas');
   const cats = DB.getCategoryTree();
   const districts = DB.listDistricts();
   const metros = DB.listMetros();
+  const zones = DB.listZones();
   districts.forEach(d => urls.push(`/zona/${d.slug}`));
   cats.forEach(c => {
     urls.push(`/${c.slug}`);
     c.children.forEach(s => urls.push(`/${s.slug}`));
+    zones.forEach(z => urls.push(`/${c.slug}/zona/${z.slug}`));
     districts.forEach(d => {
       urls.push(`/${c.slug}/${d.slug}`);
       DB.listNeighborhoods(d.id).forEach(b => urls.push(`/${c.slug}/${d.slug}/${b.slug}`));
@@ -803,7 +921,7 @@ Sitemap: ${abs(ctx, '/sitemap.xml')}
 
 module.exports = {
   SITE,
-  renderHome, renderCategory, renderDistrict, renderBarrio, renderCategoryMetro,
+  renderHome, renderCategory, renderCategoryZona, renderDistrict, renderBarrio, renderCategoryMetro,
   renderZoneDistrict, renderZoneBarrio, renderZonesIndex, renderMetroIndex, renderMetroHub,
-  renderBusiness, renderSearch, renderLegal, render404, renderSitemap, renderRobots,
+  renderBusiness, renderDestacadas, renderSearch, renderLegal, render404, renderSitemap, renderRobots,
 };

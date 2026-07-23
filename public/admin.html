@@ -26,6 +26,10 @@
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h18M3 12h18M3 17h18"/><circle cx="7" cy="7" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="17" cy="17" r="1"/></svg>
         Taxonomía
       </button>
+      <button class="admin-nav-btn" data-view="orden">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg>
+        Orden / Clasamentos
+      </button>
       <button class="admin-nav-btn" data-view="stats">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6" rx="1"/><rect x="12" y="8" width="3" height="10" rx="1"/><rect x="17" y="5" width="3" height="13" rx="1"/></svg>
         Estadísticas
@@ -119,6 +123,62 @@
         </div>
         <p class="divider-note">⚠️ Datos de demostración, contabilizados en el servidor (SQLite). Para analítica agregada de producción, ver README.md.</p>
       </section>
+
+      <!-- Vista: Orden / Clasamentos -->
+      <section id="view-orden" class="hidden">
+        <div class="admin-head">
+          <div>
+            <h1>Orden / Clasamentos</h1>
+            <p>Ordena las empresas arrastrando y soltando. Por defecto el orden es aleatorio; solo lo que fijes aquí se mantiene.</p>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-pad">
+            <div class="ord-toolbar">
+              <div class="field">
+                <label>Contexto</label>
+                <select class="input" id="ord-type">
+                  <option value="home">Home — Empresas destacadas</option>
+                  <option value="cat">Por servicio (nicho)</option>
+                </select>
+              </div>
+              <div class="field" id="ord-cat-field" style="display:none">
+                <label>Servicio</label>
+                <select class="input" id="ord-cat"></select>
+              </div>
+              <div class="field" id="ord-scope-field" style="display:none">
+                <label>Ámbito</label>
+                <select class="input" id="ord-scope">
+                  <option value="all">Toda la Comunidad</option>
+                  <option value="zona">Por zona</option>
+                  <option value="mun">Por municipio</option>
+                </select>
+              </div>
+              <div class="field" id="ord-zona-field" style="display:none">
+                <label>Zona</label>
+                <select class="input" id="ord-zona"></select>
+              </div>
+              <div class="field" id="ord-mun-field" style="display:none">
+                <label>Municipio</label>
+                <select class="input" id="ord-mun"></select>
+              </div>
+              <div class="ord-actions">
+                <button class="btn btn-ghost btn-sm" id="ord-reset">Restablecer a aleatorio</button>
+                <button class="btn btn-primary btn-sm" id="ord-save">Guardar orden</button>
+              </div>
+            </div>
+            <p class="ord-hint" id="ord-status">Cargando…</p>
+            <div class="ord-board" id="ord-board"></div>
+            <div class="ord-add" id="ord-add" style="display:none">
+              <div class="ord-add-head">Añadir empresas a “Empresas destacadas”</div>
+              <div class="ord-add-body">
+                <input class="input" id="ord-add-search" placeholder="Buscar empresa por nombre…" />
+                <div class="ord-add-list" id="ord-add-list"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
     </main>
   </div>
 
@@ -136,16 +196,35 @@
       <form id="bizForm" autocomplete="off">
         <input type="hidden" id="f-id" />
 
-        <div class="field col-2">
-          <label>Foto / Logo</label>
-          <div class="photo-upload">
-            <div class="photo-preview"><img id="f-photo-preview" alt="Vista previa" /></div>
-            <div class="pu-controls">
-              <input type="file" id="f-photo-input" accept="image/*" class="hidden" />
-              <button type="button" class="btn btn-soft btn-sm" id="f-photo-btn">Subir imagen</button>
-              <button type="button" class="btn btn-ghost btn-sm" id="f-photo-clear">Quitar</button>
-              <span class="hint">JPG/PNG. Se redimensiona automáticamente.</span>
+        <div class="form-grid">
+          <div class="field">
+            <label>Logo</label>
+            <div class="photo-upload">
+              <div class="photo-preview" style="width:88px;height:88px"><img id="f-logo-preview" alt="Logo" /></div>
+              <div class="pu-controls">
+                <input type="file" id="f-logo-input" accept="image/*" class="hidden" />
+                <button type="button" class="btn btn-soft btn-sm" id="f-logo-btn">Subir logo</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="f-logo-clear">Quitar</button>
+                <span class="hint">Logo de la empresa.</span>
+              </div>
             </div>
+          </div>
+          <div class="field">
+            <label>Foto de portada <span class="hint">(opcional)</span></label>
+            <div class="photo-upload">
+              <div class="photo-preview" style="width:88px;height:88px"><img id="f-photo-preview" alt="Portada" /></div>
+              <div class="pu-controls">
+                <input type="file" id="f-photo-input" accept="image/*" class="hidden" />
+                <button type="button" class="btn btn-soft btn-sm" id="f-photo-btn">Subir portada</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="f-photo-clear">Quitar</button>
+                <span class="hint">Si hay fotos de servicios, se usa la 1ª.</span>
+              </div>
+            </div>
+          </div>
+          <div class="field col-2">
+            <label>Fotos de servicios / trabajos <span class="hint">(varias — la 1ª es la portada por defecto)</span></label>
+            <input type="file" id="f-photos-input" accept="image/*" multiple class="hidden" />
+            <div class="photo-gallery" id="f-photos-gallery"></div>
           </div>
         </div>
 

@@ -29,6 +29,9 @@ const PORT = process.env.PORT || 3000;
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin';
 const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-insecure-secret-change-me';
+// Token pentru integrări server-to-server (ex. push de leaduri din CRM „100k MRR").
+// Gol = dezactivat (rămâne doar auth pe sesiune). Vezi requireAuth.
+const API_TOKEN = process.env.API_TOKEN || '';
 
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, '..', 'uploads');
@@ -103,11 +106,40 @@ function safeEqual(a, b) {
 }
 function requireAuth(req, res, next) {
   if (req.session && req.session.user) return next();
+  // Bypass pe token pentru integrări server-to-server (headerul x-api-token).
+  const token = req.get('x-api-token');
+  if (API_TOKEN && token && safeEqual(token, API_TOKEN)) return next();
   return res.status(401).json({ error: 'No autorizado' });
 }
 const ok = (res, data) => res.json(data);
 function ctx(req) { return { origin: req.protocol + '://' + req.get('host'), path: req.path }; }
 function sendHtml(res, html, status) { res.status(status || 200).type('html').send(html); }
+
+/* Parsează + validează o cheie de context de clasament (placements).
+   Forme: 'home' | 'cat:<slug>' | 'cat:<slug>:zona:<z>' | 'cat:<slug>:mun:<d>'. */
+function parseContext(raw) {
+  const s = String(raw || '').trim();
+  if (s === 'home') return { valid: true, kind: 'home', context: 'home', filter: {} };
+  const parts = s.split(':');
+  if (parts[0] !== 'cat' || !parts[1]) return { valid: false };
+  const cat = DB.getCategoryBySlug(parts[1]);
+  if (!cat) return { valid: false };
+  const filter = { categorySlug: cat.slug };
+  let context = 'cat:' + cat.slug, kind = 'cat';
+  if (parts.length === 2) { /* nișă întreagă */ }
+  else if (parts.length === 4 && parts[2] === 'zona') {
+    const z = (DB.ZONES || []).find(x => x.slug === parts[3]);
+    if (!z) return { valid: false };
+    filter.zona = z.slug; context += ':zona:' + z.slug; kind = 'zona';
+  } else if (parts.length === 4 && parts[2] === 'mun') {
+    const d = DB.getDistrictBySlug(parts[3]);
+    if (!d) return { valid: false };
+    filter.districtSlug = d.slug; context += ':mun:' + d.slug; kind = 'mun';
+  } else return { valid: false };
+  return { valid: true, kind, context, filter };
+}
+/* Proiecție „slabă" pentru board (fără galerii mari): doar ce afișează un slot. */
+const slimBiz = b => ({ id: b.id, name: b.name, zone: b.zone || '', featured: !!b.featured, cover: b.logo || (b.photos && b.photos[0]) || b.photo || null });
 
 /* =============================== API =================================== */
 /* ------------------------------- Auth --------------------------------- */
@@ -157,6 +189,7 @@ app.get('/api/categories', (req, res) => ok(res, { categories: DB.getCategoryTre
 app.get('/api/districts', (req, res) => ok(res, { districts: DB.listDistricts() }));
 app.get('/api/districts/:id/neighborhoods', (req, res) => ok(res, { neighborhoods: DB.listNeighborhoods(Number(req.params.id)) }));
 app.get('/api/metros', (req, res) => ok(res, { metros: DB.listMetros() }));
+app.get('/api/zones', (req, res) => ok(res, { zones: DB.ZONES || [] }));
 
 app.post('/api/categories', requireAuth, async (req, res) => {
   const body = req.body || {};
@@ -255,6 +288,33 @@ app.post('/api/track/contact', (req, res) => {
 app.get('/api/stats', requireAuth, (req, res) => ok(res, DB.getStats()));
 app.post('/api/analytics/reset', requireAuth, (req, res) => { DB.clearEvents(); seedIfEmpty(); ok(res, DB.getStats()); });
 
+/* -------------------------- Placements / clasament -------------------- */
+/* Board-ul e admin-only (întoarce și pool-ul de adăugat) → requireAuth. */
+app.get('/api/placements/:context', requireAuth, (req, res) => {
+  const pc = parseContext(req.params.context);
+  if (!pc.valid) return res.status(400).json({ error: 'Contexto no válido' });
+  let items;
+  if (pc.kind === 'home') items = DB.getPlacements('home').map(p => DB.getBusiness(p.business_id)).filter(Boolean);
+  else items = DB.orderByContext(DB.listBusinesses(pc.filter), pc.context);
+  const inSet = new Set(items.map(b => b.id));
+  // Pentru „home", pool-ul de adăugat = toate negocios care nu-s deja în listă.
+  const available = pc.kind === 'home' ? DB.listBusinesses({}).filter(b => !inSet.has(b.id)) : [];
+  ok(res, { context: pc.context, kind: pc.kind, pageSize: 20, items: items.map(slimBiz), available: available.map(slimBiz) });
+});
+app.put('/api/placements/:context', requireAuth, async (req, res) => {
+  const pc = parseContext(req.params.context);
+  if (!pc.valid) return res.status(400).json({ error: 'Contexto no válido' });
+  const ids = Array.isArray(req.body && req.body.ids) ? req.body.ids : [];
+  DB.setPlacements(pc.context, ids);
+  return saveAndRespond(res, { context: pc.context, count: DB.countPlacement(pc.context) });
+});
+app.delete('/api/placements/:context', requireAuth, async (req, res) => {
+  const pc = parseContext(req.params.context);
+  if (!pc.valid) return res.status(400).json({ error: 'Contexto no válido' });
+  DB.clearPlacements(pc.context);
+  return saveAndRespond(res, { ok: true });
+});
+
 /* API 404 (doar sub /api) */
 app.use('/api', (req, res) => res.status(404).json({ error: 'Ruta no encontrada' }));
 
@@ -262,8 +322,9 @@ app.use('/api', (req, res) => res.status(404).json({ error: 'Ruta no encontrada'
 app.get('/', (req, res) => sendHtml(res, R.renderHome(ctx(req))));
 app.get('/sitemap.xml', (req, res) => res.type('application/xml').send(R.renderSitemap(ctx(req))));
 app.get('/robots.txt', (req, res) => res.type('text/plain').send(R.renderRobots(ctx(req))));
-app.get('/buscar', (req, res) => sendHtml(res, R.renderSearch(ctx(req), req.query.q)));
+app.get('/buscar', (req, res) => sendHtml(res, R.renderSearch(ctx(req), req.query.q, req.query.page)));
 app.get('/zonas', (req, res) => sendHtml(res, R.renderZonesIndex(ctx(req))));
+app.get('/destacadas', (req, res) => sendHtml(res, R.renderDestacadas(ctx(req), req.query.page)));
 
 /* Páginas legales (RGPD / LSSI-CE) */
 app.get('/:doc(aviso-legal|privacidad|cookies|condiciones)', (req, res, next) => {
@@ -276,7 +337,7 @@ app.get('/metro', (req, res) => sendHtml(res, R.renderMetroIndex(ctx(req))));
 app.get('/metro/:estacion', (req, res, next) => {
   const m = DB.getMetroBySlug(req.params.estacion);
   if (!m) return next();
-  sendHtml(res, R.renderMetroHub(ctx(req), m));
+  sendHtml(res, R.renderMetroHub(ctx(req), m, req.query.page));
 });
 
 app.get('/negocio/:id', (req, res, next) => {
@@ -288,22 +349,29 @@ app.get('/negocio/:id', (req, res, next) => {
 app.get('/zona/:distrito', (req, res, next) => {
   const d = DB.getDistrictBySlug(req.params.distrito);
   if (!d) return next();
-  sendHtml(res, R.renderZoneDistrict(ctx(req), d));
+  sendHtml(res, R.renderZoneDistrict(ctx(req), d, req.query.page));
 });
 app.get('/zona/:distrito/:barrio', (req, res, next) => {
   const d = DB.getDistrictBySlug(req.params.distrito);
   if (!d) return next();
   const b = DB.getNeighborhoodBySlug(d.id, req.params.barrio);
   if (!b) return next();
-  sendHtml(res, R.renderZoneBarrio(ctx(req), d, b));
+  sendHtml(res, R.renderZoneBarrio(ctx(req), d, b, req.query.page));
 });
 
-/* /:categoria/metro/:estacion — ÎNAINTE de /:categoria/:distrito/:barrio */
+/* /:categoria/metro/:estacion și /:categoria/zona/:zona — ÎNAINTE de /:categoria/:distrito/:barrio */
 app.get('/:categoria/metro/:estacion', (req, res, next) => {
   const cat = DB.getCategoryBySlug(req.params.categoria);
   const metro = DB.getMetroBySlug(req.params.estacion);
   if (!cat || !metro) return next();
-  sendHtml(res, R.renderCategoryMetro(ctx(req), cat, metro));
+  sendHtml(res, R.renderCategoryMetro(ctx(req), cat, metro, req.query.page));
+});
+app.get('/:categoria/zona/:zona', (req, res, next) => {
+  const cat = DB.getCategoryBySlug(req.params.categoria);
+  if (!cat) return next();
+  const z = (DB.ZONES || []).find(x => x.slug === req.params.zona);
+  if (!z) return next();
+  sendHtml(res, R.renderCategoryZona(ctx(req), cat, z, req.query.page));
 });
 app.get('/:categoria/:distrito/:barrio', (req, res, next) => {
   const cat = DB.getCategoryBySlug(req.params.categoria);
@@ -312,19 +380,19 @@ app.get('/:categoria/:distrito/:barrio', (req, res, next) => {
   if (!d) return next();
   const b = DB.getNeighborhoodBySlug(d.id, req.params.barrio);
   if (!b) return next();
-  sendHtml(res, R.renderBarrio(ctx(req), cat, d, b));
+  sendHtml(res, R.renderBarrio(ctx(req), cat, d, b, req.query.page));
 });
 app.get('/:categoria/:distrito', (req, res, next) => {
   const cat = DB.getCategoryBySlug(req.params.categoria);
   if (!cat) return next();
   const d = DB.getDistrictBySlug(req.params.distrito);
   if (!d) return next();
-  sendHtml(res, R.renderDistrict(ctx(req), cat, d));
+  sendHtml(res, R.renderDistrict(ctx(req), cat, d, req.query.page));
 });
 app.get('/:categoria', (req, res, next) => {
   const cat = DB.getCategoryBySlug(req.params.categoria);
   if (!cat) return next();
-  sendHtml(res, R.renderCategory(ctx(req), cat));
+  sendHtml(res, R.renderCategory(ctx(req), cat, req.query.page));
 });
 
 /* 404 HTML pentru orice altă rută GET */

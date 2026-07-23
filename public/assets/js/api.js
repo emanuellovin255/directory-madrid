@@ -38,11 +38,17 @@ DDM.api = (function () {
     upload: dataUrl => req('POST', '/api/upload', { dataUrl }),
     extractFromUrl: url => req('POST', '/api/extract', { url }),
 
+    // Placements / clasament manual (drag & drop)
+    getPlacements: context => req('GET', '/api/placements/' + enc(context)),
+    setPlacements: (context, ids) => req('PUT', '/api/placements/' + enc(context), { ids }),
+    clearPlacements: context => req('DELETE', '/api/placements/' + enc(context)),
+
     // Taxonomía
     categories: () => req('GET', '/api/categories'),
     districts: () => req('GET', '/api/districts').then(d => d.districts),
     neighborhoods: districtId => req('GET', '/api/districts/' + enc(districtId) + '/neighborhoods').then(d => d.neighborhoods),
     metros: () => req('GET', '/api/metros').then(d => d.metros),
+    zones: () => req('GET', '/api/zones').then(d => d.zones),
     createCategory: c => req('POST', '/api/categories', c),
     updateCategory: (id, c) => req('PUT', '/api/categories/' + enc(id), c),
     deleteCategory: id => req('DELETE', '/api/categories/' + enc(id)),

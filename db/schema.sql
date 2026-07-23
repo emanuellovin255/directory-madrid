@@ -59,6 +59,8 @@ CREATE TABLE IF NOT EXISTS businesses (
   reviews         INTEGER DEFAULT 0,
   featured        INTEGER DEFAULT 0,
   photo           TEXT,
+  logo            TEXT,
+  photos          TEXT,          -- JSON array de URL-uri (galerie de servicii)
   created_at      BIGINT
 );
 
@@ -72,4 +74,12 @@ CREATE TABLE IF NOT EXISTS business_metros (
   business_id TEXT NOT NULL,
   metro_id    INTEGER NOT NULL,
   PRIMARY KEY (business_id, metro_id)
+);
+
+-- Clasament manual per „context" (home / cat:<slug> / cat:<slug>:zona:<z> / cat:<slug>:mun:<d>).
+CREATE TABLE IF NOT EXISTS placements (
+  context     TEXT NOT NULL,
+  business_id TEXT NOT NULL,
+  position    INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (context, business_id)
 );
