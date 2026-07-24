@@ -704,6 +704,7 @@
   function ordThumb(b) { return attr(b.cover || D.placeholderImage(b.name)); }
   function ordSlot(b, pos) {
     return `<li class="ord-slot" draggable="true" data-id="${attr(b.id)}">
+      <span class="ord-grip" aria-hidden="true" title="Arrastra para reordenar">⠿</span>
       <span class="ord-pos">${pos + 1}</span>
       <span class="ord-thumb"><img src="${ordThumb(b)}" alt="" /></span>
       <span class="ord-info"><span class="ord-name">${esc(b.name)}${b.featured ? ' ★' : ''}</span><span class="ord-zone">${esc(b.zone || '')}</span></span>
@@ -844,6 +845,7 @@
 
     bindBusinesses(); bindDrawer(); bindStats(); bindImport(); bindTaxonomy(); bindOrden(); bindLeads();
     $$('.admin-nav-btn').forEach(b => b.addEventListener('click', () => switchView(b.dataset.view)));
+    $$('[data-goview]').forEach(el => el.addEventListener('click', e => { e.preventDefault(); switchView(el.dataset.goview); }));
     $('#logoutBtn').addEventListener('click', async e => { e.preventDefault(); try { await api.logout(); } catch {} location.replace('login.html'); });
     $('#adminApp').classList.remove('hidden');
     renderBusinesses();

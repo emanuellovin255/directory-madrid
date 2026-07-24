@@ -917,6 +917,9 @@ main { display: block; }
 
 .ord-slot { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); cursor: grab; }
 .ord-slot:hover { border-color: var(--muted-2); }
+.ord-slot:active { cursor: grabbing; }
+.ord-grip { flex: none; color: var(--muted-2); font-size: 18px; line-height: 1; letter-spacing: -2px; cursor: grab; user-select: none; }
+.ord-slot:hover .ord-grip { color: var(--accent); }
 .ord-slot.dragging { opacity: .45; }
 .ord-slot.drop-target { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-100); }
 .ord-pos { flex: none; width: 30px; text-align: center; font-weight: 800; color: var(--accent-700); font-size: 15px; }
@@ -928,6 +931,9 @@ main { display: block; }
 .ord-slot-actions { display: flex; gap: 4px; flex: none; }
 .ord-drag-handle { color: var(--muted-2); cursor: grab; padding: 0 4px; }
 .ord-empty { padding: 26px; text-align: center; color: var(--muted); }
+.admin-subnote { margin: 6px 0 0; font-size: 13px; color: var(--muted); }
+.admin-subnote a { color: var(--accent-700); font-weight: 700; text-decoration: none; }
+.admin-subnote a:hover { text-decoration: underline; }
 
 .ord-add { margin-top: 20px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
 .ord-add-head { padding: 11px 16px; border-bottom: 1px solid var(--line); background: var(--surface-2); font-weight: 700; font-size: 14px; }
