@@ -814,7 +814,11 @@
   async function ordEnter() {
     if (!ordInited) {
       try { ordZones = await api.zones(); } catch { ordZones = []; }
-      ordFillSelectors(); ordSyncFields(); ordInited = true;
+      ordFillSelectors();
+      // Arranca en «Por servicio» con el primer nicho, para que el drag & drop
+      // se vea de inmediato (el contexto «Home» empieza vacío y confunde).
+      if (categoriesTree.length) { $('#ord-type').value = 'cat'; $('#ord-cat').value = categoriesTree[0].slug; }
+      ordSyncFields(); ordInited = true;
     }
     ordLoad();
   }

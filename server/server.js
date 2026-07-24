@@ -121,7 +121,13 @@ app.use((req, res, next) => { ready.then(() => next()).catch(next); });
 
 /* Fișiere statice (index:false → „/" e servit de SSR, nu de index.html). */
 if (!SERVERLESS) app.use('/uploads', express.static(UPLOADS_DIR, { maxAge: '7d' }));
-app.use(express.static(PUBLIC_DIR, { index: false }));
+/* `no-cache` = revalidare mereu prin ETag (răspuns 304 dacă n-a schimbat).
+   Fără el, browserul cache-uia euristic HTML/JS/CSS și servea admin-ul vechi
+   după fiecare deploy. Ieftin (304-uri) și elimină UI-ul învechit. */
+app.use(express.static(PUBLIC_DIR, {
+  index: false,
+  setHeaders: res => res.setHeader('Cache-Control', 'no-cache'),
+}));
 
 /* ------------------------------ Helpers ------------------------------- */
 function safeEqual(a, b) {
