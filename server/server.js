@@ -86,9 +86,18 @@ const ready = (async () => {
   }
 })();
 
-/* Salvează în Postgres după o scriere de admin, apoi răspunde. */
+/* Full dump în Postgres după o operație în masă (import / reset-demo), apoi
+   răspunde. Scump la scară → NU pentru scrieri punctuale (vezi respondAfter). */
 async function saveAndRespond(res, payload, status) {
   try { await DB.persist(); }
+  catch (e) { console.error('persist error:', e); return res.status(500).json({ error: 'No se pudo guardar en la base de datos' }); }
+  return res.status(status || 200).json(payload);
+}
+
+/* Persistă INCREMENTAL (o singură entitate) și răspunde. `persistPromise` e
+   deja pornit de apelant (ex. DB.persistBusiness(id)). */
+async function respondAfter(res, persistPromise, payload, status) {
+  try { await persistPromise; }
   catch (e) { console.error('persist error:', e); return res.status(500).json({ error: 'No se pudo guardar en la base de datos' }); }
   return res.status(status || 200).json(payload);
 }
@@ -216,32 +225,44 @@ app.post('/api/auth/logout', (req, res) => { req.session = null; ok(res, { ok: t
 app.get('/api/auth/me', (req, res) => ok(res, { user: (req.session && req.session.user) || null }));
 
 /* ---------------------------- Businesses ------------------------------ */
-app.get('/api/businesses', (req, res) => ok(res, {
-  businesses: DB.listBusinesses({
+/* Paginat: NICIODATĂ nu returnăm toate cele (posibil) 100k negocios într-un
+   singur răspuns (era un scan O(n) + payload uriaș). page/pageSize, cap 200. */
+app.get('/api/businesses', (req, res) => {
+  const filter = {
     categorySlug: req.query.category, districtSlug: req.query.district,
     barrioSlug: req.query.barrio, metroSlug: req.query.metro, q: req.query.q,
-  }),
-}));
+  };
+  const total = DB.countBusinessesFiltered(filter);
+  const pageSize = Math.min(200, Math.max(1, parseInt(req.query.pageSize, 10) || 50));
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  const page = Math.min(Math.max(1, parseInt(req.query.page, 10) || 1), pages);
+  const businesses = DB.listBusinessesPageRows(filter, (page - 1) * pageSize, pageSize);
+  ok(res, { businesses, total, page, pages, pageSize });
+});
 app.get('/api/businesses/:id', (req, res) => {
   const b = DB.getBusiness(req.params.id);
   return b ? ok(res, b) : res.status(404).json({ error: 'No encontrada' });
 });
-/* Singura rută cu bypass pe token: push de negocios din CRM „100k MRR". */
+/* Singura rută cu bypass pe token: push de negocios din CRM „100k MRR".
+   Persistă DOAR negocio-ul creat → un import 1-câte-1 e O(n), nu O(n²). */
 app.post('/api/businesses', requireAuthOrToken, async (req, res) => {
   if (!req.body || !String(req.body.name || '').trim()) return res.status(400).json({ error: 'El nombre es obligatorio' });
-  return saveAndRespond(res, DB.insertBusiness(req.body), 201);
+  const b = DB.insertBusiness(req.body);
+  return respondAfter(res, DB.persistBusiness(b.id), b, 201);
 });
 app.put('/api/businesses/:id', requireAuth, async (req, res) => {
   const b = DB.updateBusiness(req.params.id, req.body || {});
-  return b ? saveAndRespond(res, b) : res.status(404).json({ error: 'No encontrada' });
+  return b ? respondAfter(res, DB.persistBusiness(b.id), b) : res.status(404).json({ error: 'No encontrada' });
 });
 app.delete('/api/businesses/:id', requireAuth, async (req, res) => {
-  return DB.removeBusiness(req.params.id) ? saveAndRespond(res, { ok: true }) : res.status(404).json({ error: 'No encontrada' });
+  const id = req.params.id;
+  return DB.removeBusiness(id) ? respondAfter(res, DB.persistBusinessDelete(id), { ok: true }) : res.status(404).json({ error: 'No encontrada' });
 });
 app.post('/api/businesses/:id/featured', requireAuth, async (req, res) => {
   const b = DB.getBusiness(req.params.id);
   if (!b) return res.status(404).json({ error: 'No encontrada' });
-  return saveAndRespond(res, DB.setFeatured(req.params.id, req.body && req.body.featured != null ? req.body.featured : !b.featured));
+  const updated = DB.setFeatured(req.params.id, req.body && req.body.featured != null ? req.body.featured : !b.featured);
+  return respondAfter(res, DB.persistBusiness(req.params.id), updated);
 });
 app.post('/api/businesses/reset-demo', requireAuth, async (req, res) => {
   return saveAndRespond(res, { businesses: DB.replaceAll(DEMO_BUSINESSES) });
@@ -262,16 +283,18 @@ app.post('/api/categories', requireAuth, async (req, res) => {
   let created;
   try { created = DB.insertCategory(body); }
   catch (e) { return res.status(400).json({ error: e.message || 'No se pudo crear la categoría' }); }
-  return saveAndRespond(res, created, 201);
+  return respondAfter(res, DB.persistCategory(created.id), created, 201);
 });
 app.put('/api/categories/:id', requireAuth, async (req, res) => {
   const body = req.body || {};
   if (body.slug != null && isReservedSlug(DB.slugify(body.slug))) return res.status(400).json({ error: 'Ese identificador (slug) está reservado.' });
   const c = DB.updateCategory(Number(req.params.id), body);
-  return c ? saveAndRespond(res, c) : res.status(404).json({ error: 'No encontrada' });
+  return c ? respondAfter(res, DB.persistCategory(c.id), c) : res.status(404).json({ error: 'No encontrada' });
 });
 app.delete('/api/categories/:id', requireAuth, async (req, res) => {
-  return DB.removeCategory(Number(req.params.id)) ? saveAndRespond(res, { ok: true }) : res.status(404).json({ error: 'No encontrada' });
+  // Capturăm descendenții ÎNAINTE de ștergere (SQLite cascadează → după nu mai știm).
+  const ids = DB.descendantCategoryIds(Number(req.params.id));
+  return DB.removeCategory(Number(req.params.id)) ? respondAfter(res, DB.persistCategoryDelete(ids), { ok: true }) : res.status(404).json({ error: 'No encontrada' });
 });
 
 app.post('/api/metros', requireAuth, async (req, res) => {
@@ -279,20 +302,22 @@ app.post('/api/metros', requireAuth, async (req, res) => {
   let created;
   try { created = DB.insertMetro(req.body); }
   catch (e) { return res.status(400).json({ error: e.message || 'No se pudo crear la estación' }); }
-  return saveAndRespond(res, created, 201);
+  return respondAfter(res, DB.persistMetro(created.id), created, 201);
 });
 app.put('/api/metros/:id', requireAuth, async (req, res) => {
   const m = DB.updateMetro(Number(req.params.id), req.body || {});
-  return m ? saveAndRespond(res, m) : res.status(404).json({ error: 'No encontrada' });
+  return m ? respondAfter(res, DB.persistMetro(m.id), m) : res.status(404).json({ error: 'No encontrada' });
 });
 app.delete('/api/metros/:id', requireAuth, async (req, res) => {
-  return DB.removeMetro(Number(req.params.id)) ? saveAndRespond(res, { ok: true }) : res.status(404).json({ error: 'No encontrada' });
+  const id = Number(req.params.id);
+  return DB.removeMetro(id) ? respondAfter(res, DB.persistMetroDelete(id), { ok: true }) : res.status(404).json({ error: 'No encontrada' });
 });
 app.post('/api/neighborhoods', requireAuth, async (req, res) => {
   const body = req.body || {};
   const districtId = Number(body.districtId);
   if (!String(body.name || '').trim() || !districtId) return res.status(400).json({ error: 'Nombre y distrito son obligatorios' });
-  return saveAndRespond(res, DB.insertNeighborhood(String(body.name).trim(), body.slug, districtId), 201);
+  const n = DB.insertNeighborhood(String(body.name).trim(), body.slug, districtId);
+  return respondAfter(res, DB.persistNeighborhood(n.id), n, 201);
 });
 
 /* --------------------------- Export / Import -------------------------- */
@@ -403,13 +428,13 @@ app.put('/api/placements/:context', requireAuth, async (req, res) => {
   if (!pc.valid) return res.status(400).json({ error: 'Contexto no válido' });
   const ids = Array.isArray(req.body && req.body.ids) ? req.body.ids : [];
   DB.setPlacements(pc.context, ids);
-  return saveAndRespond(res, { context: pc.context, count: DB.countPlacement(pc.context) });
+  return respondAfter(res, DB.persistPlacements(pc.context), { context: pc.context, count: DB.countPlacement(pc.context) });
 });
 app.delete('/api/placements/:context', requireAuth, async (req, res) => {
   const pc = parseContext(req.params.context);
   if (!pc.valid) return res.status(400).json({ error: 'Contexto no válido' });
   DB.clearPlacements(pc.context);
-  return saveAndRespond(res, { ok: true });
+  return respondAfter(res, DB.persistPlacements(pc.context), { ok: true });
 });
 
 /* API 404 (doar sub /api) */
@@ -417,7 +442,10 @@ app.use('/api', (req, res) => res.status(404).json({ error: 'Ruta no encontrada'
 
 /* ========================= PAGINI SEO (SSR) =========================== */
 app.get('/', (req, res) => sendHtml(res, R.renderHome(ctx(req))));
-app.get('/sitemap.xml', (req, res) => res.type('application/xml').send(R.renderSitemap(ctx(req))));
+/* Sitemap INDEX + sub-sitemap-uri (≤45k URL-uri/fișier, sub limita de 50k). */
+app.get('/sitemap.xml', (req, res) => res.type('application/xml').send(R.renderSitemapIndex(ctx(req))));
+app.get('/sitemap-paginas.xml', (req, res) => res.type('application/xml').send(R.renderSitemapPaginas(ctx(req))));
+app.get('/sitemap-negocios-:n.xml', (req, res) => res.type('application/xml').send(R.renderSitemapNegocios(ctx(req), req.params.n)));
 app.get('/robots.txt', (req, res) => res.type('text/plain').send(R.renderRobots(ctx(req))));
 app.get('/buscar', (req, res) => sendHtml(res, R.renderSearch(ctx(req), req.query.q, req.query.page)));
 app.get('/zonas', (req, res) => sendHtml(res, R.renderZonesIndex(ctx(req))));

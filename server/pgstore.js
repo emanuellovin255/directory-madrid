@@ -168,6 +168,83 @@ async function dump(sqlite) {
   }
 }
 
+/* ---- Scrieri INCREMENTALE (o entitate, nu tot snapshot-ul) ------------------
+   Cheile primare per tabel, pentru ON CONFLICT. */
+const PK = {
+  districts: ['id'], categories: ['id'], neighborhoods: ['id'], metros: ['id'],
+  businesses: ['id'],
+  business_categories: ['business_id', 'category_id'],
+  business_metros: ['business_id', 'metro_id'],
+  placements: ['context', 'business_id'],
+};
+function upsertSql(table, cols, pkCols) {
+  const ph = cols.map((_, i) => '$' + (i + 1)).join(',');
+  const updates = cols.filter(c => !pkCols.includes(c)).map(c => `${c}=EXCLUDED.${c}`).join(',');
+  const conflict = updates
+    ? `ON CONFLICT (${pkCols.join(',')}) DO UPDATE SET ${updates}`
+    : `ON CONFLICT (${pkCols.join(',')}) DO NOTHING`;
+  return `INSERT INTO ${table} (${cols.join(',')}) VALUES (${ph}) ${conflict}`;
+}
+
+/* Upsert un negocio + rescrie DOAR legăturile lui (categorii/metros). */
+async function upsertBusiness(row, categoryIds, metroIds) {
+  if (!enabled) return;
+  const cols = TABLES.businesses;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(upsertSql('businesses', cols, PK.businesses), cols.map(c => row[c] === undefined ? null : row[c]));
+    await client.query('DELETE FROM business_categories WHERE business_id=$1', [row.id]);
+    for (const cid of (categoryIds || [])) {
+      await client.query('INSERT INTO business_categories (business_id,category_id) VALUES ($1,$2) ON CONFLICT (business_id,category_id) DO NOTHING', [row.id, cid]);
+    }
+    await client.query('DELETE FROM business_metros WHERE business_id=$1', [row.id]);
+    for (const mid of (metroIds || [])) {
+      await client.query('INSERT INTO business_metros (business_id,metro_id) VALUES ($1,$2) ON CONFLICT (business_id,metro_id) DO NOTHING', [row.id, mid]);
+    }
+    await client.query('COMMIT');
+  } catch (e) { await client.query('ROLLBACK'); throw e; }
+  finally { client.release(); }
+}
+async function deleteBusiness(id) {
+  if (!enabled) return;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM business_categories WHERE business_id=$1', [id]);
+    await client.query('DELETE FROM business_metros WHERE business_id=$1', [id]);
+    await client.query('DELETE FROM placements WHERE business_id=$1', [id]);
+    await client.query('DELETE FROM businesses WHERE id=$1', [id]);
+    await client.query('COMMIT');
+  } catch (e) { await client.query('ROLLBACK'); throw e; }
+  finally { client.release(); }
+}
+/* Upsert generic pentru un rând de taxonomie (categories/metros/neighborhoods…). */
+async function upsertRow(table, row) {
+  if (!enabled) return;
+  const cols = TABLES[table];
+  await pool.query(upsertSql(table, cols, PK[table]), cols.map(c => row[c] === undefined ? null : row[c]));
+}
+async function deleteRowsIn(table, whereCol, vals) {
+  if (!enabled || !vals || !vals.length) return;
+  const ph = vals.map((_, i) => '$' + (i + 1)).join(',');
+  await pool.query(`DELETE FROM ${table} WHERE ${whereCol} IN (${ph})`, vals);
+}
+/* Rescrie DOAR placement-urile unui context (mărginit — max câteva zeci de rânduri). */
+async function replacePlacements(context, rows) {
+  if (!enabled) return;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM placements WHERE context=$1', [context]);
+    for (const r of (rows || [])) {
+      await client.query('INSERT INTO placements (context,business_id,position) VALUES ($1,$2,$3) ON CONFLICT (context,business_id) DO UPDATE SET position=EXCLUDED.position', [context, r.business_id, r.position]);
+    }
+    await client.query('COMMIT');
+  } catch (e) { await client.query('ROLLBACK'); throw e; }
+  finally { client.release(); }
+}
+
 /* pg poate întoarce boolean ca true/false și BIGINT ca string. SQLite vrea
    0/1 pentru booleeni; pentru coloanele INTEGER, afinitatea SQLite convertește
    singură textul numeric (ex. created_at „1721000000") — deci NU atingem
@@ -221,5 +298,6 @@ async function deleteLead(id) {
 
 module.exports = {
   init, isEnabled, ensureSchema, hydrate, dump, TABLES, TABLE_NAMES, DDL,
+  upsertBusiness, deleteBusiness, upsertRow, deleteRowsIn, replacePlacements,
   insertLead, listLeads, countLeadsByStatus, updateLeadStatus, deleteLead,
 };

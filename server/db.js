@@ -210,6 +210,7 @@ function insertCategory(data) {
     VALUES (?,?,?,?,?,?,?)`).run(
     slug, name, resolveParentId(data), data.icon || null, String(data.intro || ''),
     parseInt(data.display_order, 10) || 0, data.in_nav === 0 || data.in_nav === false ? 0 : 1);
+  bumpDataVersion();
   return getCategory(Number(info.lastInsertRowid));
 }
 function updateCategory(id, data) {
@@ -225,9 +226,10 @@ function updateCategory(id, data) {
     'display_order' in data ? (parseInt(data.display_order, 10) || 0) : cur.display_order,
     'in_nav' in data ? (data.in_nav ? 1 : 0) : (cur.in_nav ? 1 : 0),
     id);
+  bumpDataVersion();
   return getCategory(id);
 }
-function removeCategory(id) { return db.prepare('DELETE FROM categories WHERE id=?').run(id).changes > 0; }
+function removeCategory(id) { const ch = db.prepare('DELETE FROM categories WHERE id=?').run(id).changes > 0; if (ch) bumpDataVersion(); return ch; }
 
 /* ============================ DISTRICTS ============================== */
 function parseDistrict(r) { return r ? { id: r.id, slug: r.slug, name: r.name, display_order: r.display_order || 0, kind: districtKind(r.slug), zona: districtZona(r.slug) } : null; }
@@ -237,6 +239,7 @@ function getDistrictBySlug(slug) { return parseDistrict(db.prepare('SELECT * FRO
 function countDistricts() { return db.prepare('SELECT COUNT(*) c FROM districts').get().c; }
 function insertDistrict(name, slug, order) {
   const info = db.prepare('INSERT INTO districts (slug,name,display_order) VALUES (?,?,?)').run(slug || slugify(name), name, order || 0);
+  bumpDataVersion();
   return getDistrict(Number(info.lastInsertRowid));
 }
 /* Distritos capitalei vs municipios ale Comunidad; zone geografice pentru navegación. */
@@ -261,6 +264,7 @@ function getNeighborhood(id) { return parseNeighborhood(db.prepare('SELECT * FRO
 function getNeighborhoodBySlug(districtId, slug) { return parseNeighborhood(db.prepare('SELECT * FROM neighborhoods WHERE district_id=? AND slug=?').get(districtId, String(slug || ''))); }
 function insertNeighborhood(name, slug, districtId) {
   const info = db.prepare('INSERT INTO neighborhoods (slug,name,district_id) VALUES (?,?,?)').run(slug || slugify(name), name, districtId);
+  bumpDataVersion();
   return getNeighborhood(Number(info.lastInsertRowid));
 }
 
@@ -281,6 +285,7 @@ function insertMetro(data) {
   const slug = uniqueMetroSlug(slugify(data.slug || name));
   const lines = Array.isArray(data.lines) ? data.lines : (data.lines ? String(data.lines).split(/[,\s]+/).filter(Boolean) : []);
   const info = db.prepare('INSERT INTO metros (slug,name,lines) VALUES (?,?,?)').run(slug, name, JSON.stringify(lines));
+  bumpDataVersion();
   return getMetro(Number(info.lastInsertRowid));
 }
 function updateMetro(id, data) {
@@ -290,9 +295,10 @@ function updateMetro(id, data) {
   const slug = data.slug != null ? uniqueMetroSlug(slugify(data.slug), id) : cur.slug;
   const lines = 'lines' in data ? (Array.isArray(data.lines) ? data.lines : String(data.lines || '').split(/[,\s]+/).filter(Boolean)) : cur.lines;
   db.prepare('UPDATE metros SET name=?,slug=?,lines=? WHERE id=?').run(name, slug, JSON.stringify(lines), id);
+  bumpDataVersion();
   return getMetro(id);
 }
-function removeMetro(id) { return db.prepare('DELETE FROM metros WHERE id=?').run(id).changes > 0; }
+function removeMetro(id) { const ch = db.prepare('DELETE FROM metros WHERE id=?').run(id).changes > 0; if (ch) bumpDataVersion(); return ch; }
 
 /* ============================ BUSINESSES ============================= */
 function resolveDistrictId(data) {
@@ -411,6 +417,7 @@ function insertBusiness(data, forcedId) {
     b.rating, b.reviews, b.featured, b.photo, b.logo, JSON.stringify(b.photos), now());
   setBusinessCategories(id, b.categoryIds);
   setBusinessMetros(id, b.metroIds);
+  bumpDataVersion();
   return getBusiness(id);
 }
 function businessToInput(b) {
@@ -434,18 +441,26 @@ function updateBusiness(id, data) {
     b.rating, b.reviews, b.featured, b.photo, b.logo, JSON.stringify(b.photos), id);
   setBusinessCategories(id, b.categoryIds);
   setBusinessMetros(id, b.metroIds);
+  bumpDataVersion();
   return getBusiness(id);
 }
-function removeBusiness(id) { return db.prepare('DELETE FROM businesses WHERE id=?').run(id).changes > 0; }
-function setFeatured(id, val) { db.prepare('UPDATE businesses SET featured=? WHERE id=?').run(val ? 1 : 0, id); return getBusiness(id); }
+function removeBusiness(id) { const ch = db.prepare('DELETE FROM businesses WHERE id=?').run(id).changes > 0; if (ch) bumpDataVersion(); return ch; }
+function setFeatured(id, val) { db.prepare('UPDATE businesses SET featured=? WHERE id=?').run(val ? 1 : 0, id); bumpDataVersion(); return getBusiness(id); }
 function getBusiness(id) { return attachRelations(parseBusinessRow(db.prepare('SELECT * FROM businesses WHERE id=?').get(id))); }
 function countBusinesses() { return db.prepare('SELECT COUNT(*) c FROM businesses').get().c; }
 
-function listBusinesses(filter) {
+/* Construiește query-ul (FROM/JOIN + WHERE + params) pentru un filtru de
+   businesses. Partajat de calea „light" (id-uri) și cea „full" (cu relații).
+   `dead=true` → niciun rezultat (slug inexistent). Filtrul de categorie e un
+   JOIN (index pe business_categories.category_id) în loc de EXISTS peste toate
+   cele 100k rânduri. Zona se rezolvă în SQL (district_id IN (…)). */
+function buildBusinessQuery(filter) {
   filter = filter || {};
+  const joins = [];
+  const joinParams = [];
   const where = [];
-  const params = [];
-  let dead = false;
+  const whereParams = [];
+  let dead = false, grouped = false;
 
   const catSlug = filter.categorySlug;
   const catId = filter.categoryId;
@@ -454,47 +469,141 @@ function listBusinesses(filter) {
     if (!cat) dead = true;
     else {
       const ids = descendantCategoryIds(cat.id);
-      where.push(`EXISTS (SELECT 1 FROM business_categories bc WHERE bc.business_id=b.id AND bc.category_id IN (${ids.map(() => '?').join(',')}))`);
-      params.push(...ids);
+      joins.push(`JOIN business_categories bc ON bc.business_id=b.id AND bc.category_id IN (${ids.map(() => '?').join(',')})`);
+      joinParams.push(...ids);
+      grouped = true;   // un negocio poate fi în părinte+copil → GROUP BY b.id evită dublurile
     }
   }
   let district = null;
   if (filter.districtSlug || filter.districtId) {
     district = filter.districtSlug ? getDistrictBySlug(filter.districtSlug) : getDistrict(filter.districtId);
     if (!district) dead = true;
-    else { where.push('b.district_id=?'); params.push(district.id); }
+    else { where.push('b.district_id=?'); whereParams.push(district.id); }
   }
   if (filter.barrioSlug || filter.neighborhoodId) {
     let n = null;
     if (filter.neighborhoodId) n = getNeighborhood(filter.neighborhoodId);
     else if (district) n = getNeighborhoodBySlug(district.id, filter.barrioSlug);
     if (!n) dead = true;
-    else { where.push('b.neighborhood_id=?'); params.push(n.id); }
+    else { where.push('b.neighborhood_id=?'); whereParams.push(n.id); }
   }
   if (filter.metroSlug || filter.metroId) {
     const m = filter.metroSlug ? getMetroBySlug(filter.metroSlug) : getMetro(filter.metroId);
     if (!m) dead = true;
-    else { where.push('EXISTS (SELECT 1 FROM business_metros bm WHERE bm.business_id=b.id AND bm.metro_id=?)'); params.push(m.id); }
+    else { where.push('EXISTS (SELECT 1 FROM business_metros bm WHERE bm.business_id=b.id AND bm.metro_id=?)'); whereParams.push(m.id); }
+  }
+  if (filter.zona) {
+    const ids = listDistricts().filter(d => d.zona === filter.zona).map(d => d.id);
+    if (!ids.length) dead = true;
+    else { where.push(`b.district_id IN (${ids.map(() => '?').join(',')})`); whereParams.push(...ids); }
   }
   if (filter.featured) where.push('b.featured=1');
   if (filter.q) {
     const like = '%' + String(filter.q).trim() + '%';
     where.push('(b.name LIKE ? OR b.about LIKE ? OR b.address LIKE ?)');
-    params.push(like, like, like);
+    whereParams.push(like, like, like);
   }
-  if (dead) return [];
+  // params în ordinea din SQL: întâi cele din JOIN, apoi cele din WHERE.
+  return { joins: joins.join(' '), where, params: joinParams.concat(whereParams), dead, grouped };
+}
+function buildBusinessSql(cols, filter) {
+  const { joins, where, params, dead, grouped } = buildBusinessQuery(filter);
+  const sql = `SELECT ${cols} FROM businesses b ${joins} ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+    ${grouped ? 'GROUP BY b.id' : ''} ORDER BY b.featured DESC, b.rating DESC, b.name ASC`;
+  return { sql, params, dead };
+}
 
-  const sql = `SELECT b.* FROM businesses b ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
-    ORDER BY b.featured DESC, b.rating DESC, b.name ASC`;
-  const rows = db.prepare(sql).all(...params);
-  let out = rows.map(r => attachRelations(parseBusinessRow(r)));
-  // Filtru pe zonă geografică (derivată din municipiu) — pentru contexte nișă × zonă.
-  if (filter.zona) out = out.filter(b => b.district && b.district.zona === filter.zona);
-  return filter.limit ? out.slice(0, filter.limit) : out;
+/* Listare „light": DOAR câmpurile de bază, FĂRĂ relații și FĂRĂ parse de JSON.
+   Suficient pentru ordonare (orderByContext) + paginare; paginile hidratează
+   apoi doar cele ~20 de negocios afișate. La 100k rânduri asta e diferența
+   dintre ~4 query-uri × 100k (câteva secunde) și un singur SELECT (ms). */
+const LIGHT_COLS = 'b.id,b.name,b.featured,b.rating,b.district_id,b.neighborhood_id,b.created_at';
+function listBusinessesLight(filter) {
+  const { sql, params, dead } = buildBusinessSql(LIGHT_COLS, filter);
+  if (dead) return [];
+  const rows = db.prepare(sql).all(...params).map(r => ({
+    id: r.id, name: r.name, featured: !!r.featured,
+    rating: r.rating != null ? r.rating : null,
+    district_id: r.district_id || null, neighborhood_id: r.neighborhood_id || null,
+    created_at: r.created_at != null ? r.created_at : null,
+  }));
+  return (filter && filter.limit) ? rows.slice(0, filter.limit) : rows;
+}
+
+/* Listare „full" (cu relații atașate pe fiecare rând). Rămâne pentru export și
+   board-ul de admin; NU o folosi pe paginile publice (e O(n) relații). */
+function listBusinesses(filter) {
+  const { sql, params, dead } = buildBusinessSql('b.*', filter);
+  if (dead) return [];
+  const out = db.prepare(sql).all(...params).map(r => attachRelations(parseBusinessRow(r)));
+  return (filter && filter.limit) ? out.slice(0, filter.limit) : out;
+}
+
+/* Numărare + paginare la nivel de SQL (LIMIT/OFFSET), în ordinea implicită
+   (featured/rating/name). Pentru API/admin: NU materializăm toate cele 100k
+   rânduri ca să afișăm 50. (Fără shuffle pe context — ăla e pentru paginile SEO.) */
+function countBusinessesFiltered(filter) {
+  const { joins, where, params, dead, grouped } = buildBusinessQuery(filter);
+  if (dead) return 0;
+  const inner = `SELECT b.id FROM businesses b ${joins} ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ${grouped ? 'GROUP BY b.id' : ''}`;
+  const sql = grouped ? `SELECT COUNT(*) c FROM (${inner})` : `SELECT COUNT(*) c FROM businesses b ${joins} ${where.length ? 'WHERE ' + where.join(' AND ') : ''}`;
+  return db.prepare(sql).get(...params).c;
+}
+function listBusinessesPageRows(filter, offset, limit) {
+  const { joins, where, params, dead, grouped } = buildBusinessQuery(filter);
+  if (dead) return [];
+  const sql = `SELECT b.* FROM businesses b ${joins} ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+    ${grouped ? 'GROUP BY b.id' : ''} ORDER BY b.featured DESC, b.rating DESC, b.name ASC LIMIT ? OFFSET ?`;
+  return db.prepare(sql).all(...params, Number(limit) || 50, Number(offset) || 0)
+    .map(r => attachRelations(parseBusinessRow(r)));
+}
+
+/* Doar id + created_at, paginat la nivel de SQL — pentru sitemap-ul de negocios. */
+function listBusinessSitemap(offset, limit) {
+  return db.prepare('SELECT id, created_at FROM businesses ORDER BY created_at DESC, id LIMIT ? OFFSET ?')
+    .all(Number(limit) || 45000, Number(offset) || 0);
+}
+
+/* Acoperire pentru sitemap: ce combinații (categorie × zonă/distrito/barrio/metro)
+   au ≥1 negocio. Calculat prin câteva query-uri DISTINCT (mărginit de numărul de
+   COMBINAȚII, nu de cele 100k negocios) — fără a materializa vreun rând întreg.
+   Include și categoriile-strămoș (o subcategorie acoperă și pagina părintelui). */
+function getSitemapCoverage() {
+  const catById = new Map(db.prepare('SELECT id,slug,parent_id FROM categories').all().map(c => [c.id, c]));
+  const distById = new Map(listDistricts().map(d => [d.id, d]));            // are slug + zona
+  const barrById = new Map(db.prepare('SELECT id,slug FROM neighborhoods').all().map(n => [n.id, n]));
+  const metroById = new Map(db.prepare('SELECT id,slug FROM metros').all().map(m => [m.id, m]));
+  const ancSlugs = cid => {
+    const out = []; let c = catById.get(cid), guard = 0;
+    while (c && guard++ < 20) { out.push(c.slug); c = c.parent_id != null ? catById.get(c.parent_id) : null; }
+    return out;
+  };
+  const cov = { muni: new Set(), cat: new Set(), catMun: new Set(), catBar: new Set(), catZona: new Set(), catMetro: new Set() };
+
+  db.prepare('SELECT DISTINCT district_id d FROM businesses WHERE district_id IS NOT NULL').all()
+    .forEach(r => { const d = distById.get(r.d); if (d) cov.muni.add(d.slug); });
+
+  db.prepare('SELECT DISTINCT category_id c FROM business_categories').all()
+    .forEach(r => ancSlugs(r.c).forEach(s => cov.cat.add(s)));
+
+  db.prepare(`SELECT DISTINCT bc.category_id c, b.district_id d FROM business_categories bc
+     JOIN businesses b ON b.id=bc.business_id WHERE b.district_id IS NOT NULL`).all()
+    .forEach(r => { const d = distById.get(r.d); if (!d) return; ancSlugs(r.c).forEach(cs => { cov.catMun.add(cs + '|' + d.slug); if (d.zona) cov.catZona.add(cs + '|' + d.zona); }); });
+
+  db.prepare(`SELECT DISTINCT bc.category_id c, b.district_id d, b.neighborhood_id n FROM business_categories bc
+     JOIN businesses b ON b.id=bc.business_id WHERE b.neighborhood_id IS NOT NULL`).all()
+    .forEach(r => { const d = distById.get(r.d), n = barrById.get(r.n); if (!d || !n) return; ancSlugs(r.c).forEach(cs => cov.catBar.add(cs + '|' + d.slug + '|' + n.slug)); });
+
+  db.prepare(`SELECT DISTINCT bc.category_id c, bm.metro_id m FROM business_categories bc
+     JOIN business_metros bm ON bm.business_id=bc.business_id`).all()
+    .forEach(r => { const m = metroById.get(r.m); if (!m) return; ancSlugs(r.c).forEach(cs => cov.catMetro.add(cs + '|' + m.slug)); });
+
+  return cov;
 }
 
 function replaceAll(items) {
   db.prepare('DELETE FROM businesses').run();  // cascade curăță tabelele de legătură
+  bumpDataVersion();
   const seen = new Set();
   const out = [];
   (items || []).forEach(item => {
@@ -529,9 +638,10 @@ function setPlacements(context, ids) {
     (ids || []).forEach(id => { const sid = String(id); if (_existsBiz.get(sid)) _insPlac.run(ctx, sid, pos++); });
     db.exec('COMMIT');
   } catch (e) { try { db.exec('ROLLBACK'); } catch { /* ignoră */ } throw e; }
+  bumpDataVersion();
   return getPlacements(ctx);
 }
-function clearPlacements(context) { return _delPlac.run(String(context || '')).changes > 0; }
+function clearPlacements(context) { const ch = _delPlac.run(String(context || '')).changes > 0; if (ch) bumpDataVersion(); return ch; }
 
 /* Hash FNV-1a → cheie de sortare pseudo-aleatorie, stabilă per (business, context). */
 function shuffleKey(id, context) {
@@ -547,7 +657,10 @@ function orderByContext(list, context) {
   const pinned = [], rest = [];
   (list || []).forEach(b => { (posMap.has(b.id) ? pinned : rest).push(b); });
   pinned.sort((a, b) => posMap.get(a.id) - posMap.get(b.id));
-  rest.sort((a, b) => (shuffleKey(a.id, context) - shuffleKey(b.id, context)) || (a.name < b.name ? -1 : 1));
+  // decorate-sort: calculăm cheia de shuffle O(1) per item (nu de ~2× per
+  // comparație), ca sortarea a 16k+ rânduri să nu re-hasheze de sute de mii de ori.
+  rest.forEach(b => { b._sk = shuffleKey(b.id, context); });
+  rest.sort((a, b) => (a._sk - b._sk) || (a.name < b.name ? -1 : 1));
   return pinned.concat(rest);
 }
 function paginate(items, page, pageSize) {
@@ -557,11 +670,36 @@ function paginate(items, page, pageSize) {
   const p = Math.min(Math.max(1, parseInt(page, 10) || 1), pages);
   return { items: items.slice((p - 1) * ps, p * ps), total, page: p, pages, pageSize: ps };
 }
-/* Listare ordonată pe context + paginare. baseFilter = filtrul din listBusinesses. */
+/* Cache de ORDINE per-context: lista ordonată de id-uri (ordonarea e deterministă
+   și depinde doar de negocios + placements). La 10M vizite/lună traficul se
+   concentrează pe puține pagini populare → aproape toate loviturile sunt din
+   cache, iar un request devine „slice + hidratează 20", nu „sortează 16k".
+   Invalidare simplă: un contor `_dataVersion` incrementat la ORICE scriere. */
+let _dataVersion = 0;
+function bumpDataVersion() { _dataVersion++; }
+const _orderCache = new Map();        // context -> { ids:[], v }
+const ORDER_CACHE_MAX = 300;
+function orderedIdsForContext(context, baseFilter) {
+  const hit = _orderCache.get(context);
+  if (hit && hit.v === _dataVersion) return hit.ids;
+  const ids = orderByContext(listBusinessesLight(baseFilter || {}), context).map(b => b.id);
+  if (_orderCache.size >= ORDER_CACHE_MAX && !_orderCache.has(context)) {
+    _orderCache.delete(_orderCache.keys().next().value);   // FIFO: scoate cel mai vechi
+  }
+  _orderCache.set(context, { ids, v: _dataVersion });
+  return ids;
+}
+/* Listare ordonată pe context + paginare. Ordinea vine din cache (id-uri),
+   apoi hidratăm cu relații DOAR negocios din pagina curentă (~20). */
 function listForContext(context, baseFilter, opts) {
   opts = opts || {};
-  const ordered = orderByContext(listBusinesses(baseFilter || {}), context);
-  return paginate(ordered, opts.page, opts.pageSize || 20);
+  const ids = orderedIdsForContext(context, baseFilter);
+  const ps = opts.pageSize || 20;
+  const total = ids.length;
+  const pages = Math.max(1, Math.ceil(total / ps));
+  const p = Math.min(Math.max(1, parseInt(opts.page, 10) || 1), pages);
+  const items = ids.slice((p - 1) * ps, p * ps).map(id => getBusiness(id)).filter(Boolean);
+  return { items, total, page: p, pages, pageSize: ps };
 }
 /* Home: doar membership (businesses din placements 'home'), în ordinea position. */
 function listHome(opts) {
@@ -699,17 +837,74 @@ async function initPersistence(injectedPool) {
   await pgstore.ensureSchema();
   return pgstore.hydrate(db);
 }
-/* Rescrie starea curentă în Postgres. No-op dacă nu e configurat Supabase.
-   Se apelează (await) după fiecare scriere de admin. */
+/* Rescrie COMPLET starea în Postgres (full dump). Scump la scară → îl folosim
+   DOAR pentru operații în masă (import / reset-demo). Pentru scrierile punctuale
+   folosim funcțiile persist* incrementale de mai jos. */
 async function persist() {
   if (!pgstore.isEnabled()) return;
   await pgstore.dump(db);
 }
 function persistenceEnabled() { return pgstore.isEnabled(); }
 
+/* ---- Persistență INCREMENTALĂ (o singură entitate → un singur upsert) --------
+   Fără astea, orice editare de admin (sau fiecare negocio împins din CRM) ar
+   rescrie toată baza în Postgres — O(n) per scriere, O(n²) la un import 1-câte-1. */
+async function persistBusiness(id) {
+  if (!pgstore.isEnabled()) return;
+  const cols = pgstore.TABLES.businesses;
+  const row = db.prepare(`SELECT ${cols.join(',')} FROM businesses WHERE id=?`).get(id);
+  if (!row) return;
+  const catIds = db.prepare('SELECT category_id FROM business_categories WHERE business_id=?').all(id).map(r => r.category_id);
+  const metroIds = db.prepare('SELECT metro_id FROM business_metros WHERE business_id=?').all(id).map(r => r.metro_id);
+  await pgstore.upsertBusiness(row, catIds, metroIds);
+}
+async function persistBusinessDelete(id) {
+  if (!pgstore.isEnabled()) return;
+  await pgstore.deleteBusiness(String(id));
+}
+async function persistCategory(id) {
+  if (!pgstore.isEnabled()) return;
+  const cols = pgstore.TABLES.categories;
+  const row = db.prepare(`SELECT ${cols.join(',')} FROM categories WHERE id=?`).get(id);
+  if (row) await pgstore.upsertRow('categories', row);
+}
+/* Ștergere de categorie: cascadă și în Postgres (n-are FK) — id + descendenți +
+   legăturile din business_categories. `ids` = [id, ...descendenți] capturat de
+   apelant ÎNAINTE de removeCategory (SQLite cascadează, deci după nu mai știm). */
+async function persistCategoryDelete(ids) {
+  if (!pgstore.isEnabled()) return;
+  const arr = (Array.isArray(ids) ? ids : [ids]).map(Number).filter(Boolean);
+  await pgstore.deleteRowsIn('business_categories', 'category_id', arr);
+  await pgstore.deleteRowsIn('categories', 'id', arr);
+}
+async function persistMetro(id) {
+  if (!pgstore.isEnabled()) return;
+  const cols = pgstore.TABLES.metros;
+  const row = db.prepare(`SELECT ${cols.join(',')} FROM metros WHERE id=?`).get(id);
+  if (row) await pgstore.upsertRow('metros', row);
+}
+async function persistMetroDelete(id) {
+  if (!pgstore.isEnabled()) return;
+  await pgstore.deleteRowsIn('business_metros', 'metro_id', [Number(id)]);
+  await pgstore.deleteRowsIn('metros', 'id', [Number(id)]);
+}
+async function persistNeighborhood(id) {
+  if (!pgstore.isEnabled()) return;
+  const cols = pgstore.TABLES.neighborhoods;
+  const row = db.prepare(`SELECT ${cols.join(',')} FROM neighborhoods WHERE id=?`).get(id);
+  if (row) await pgstore.upsertRow('neighborhoods', row);
+}
+async function persistPlacements(context) {
+  if (!pgstore.isEnabled()) return;
+  const rows = db.prepare('SELECT context,business_id,position FROM placements WHERE context=?').all(String(context));
+  await pgstore.replacePlacements(String(context), rows);
+}
+
 module.exports = {
   db, DAYS, slugify, now,
   initPersistence, persist, persistenceEnabled,
+  persistBusiness, persistBusinessDelete, persistCategory, persistCategoryDelete,
+  persistMetro, persistMetroDelete, persistNeighborhood, persistPlacements,
   // categories
   listCategories, getCategoryTree, getCategory, getCategoryBySlug, insertCategory, updateCategory, removeCategory, descendantCategoryIds, countCategories,
   // districts / neighborhoods / zonas
@@ -719,7 +914,10 @@ module.exports = {
   // metros
   listMetros, getMetro, getMetroBySlug, insertMetro, updateMetro, removeMetro, countMetros,
   // businesses
-  insertBusiness, updateBusiness, removeBusiness, setFeatured, getBusiness, listBusinesses, countBusinesses, replaceAll,
+  insertBusiness, updateBusiness, removeBusiness, setFeatured, getBusiness, listBusinesses, listBusinessesLight, countBusinesses, replaceAll,
+  countBusinessesFiltered, listBusinessesPageRows,
+  // sitemap
+  listBusinessSitemap, getSitemapCoverage,
   // placements / clasament
   getPlacements, setPlacements, clearPlacements, countPlacement, orderByContext, listForContext, listHome,
   // events / stats

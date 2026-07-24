@@ -27,6 +27,8 @@ DDM.api = (function () {
   return {
     // Negocios
     listBusinesses: (params) => req('GET', '/api/businesses' + qs(params)).then(d => d.businesses),
+    // Variantă paginată: întoarce {businesses,total,page,pages,pageSize}.
+    listBusinessesPage: (params) => req('GET', '/api/businesses' + qs(params)),
     getBusiness: id => req('GET', '/api/businesses/' + enc(id)),
     createBusiness: b => req('POST', '/api/businesses', b),
     updateBusiness: (id, b) => req('PUT', '/api/businesses/' + enc(id), b),

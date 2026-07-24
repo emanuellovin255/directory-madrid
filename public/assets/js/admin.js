@@ -62,15 +62,23 @@
   }
 
   /* ------------------------------ Tabla --------------------------------- */
+  /* Paginat pe server (poate fi vorba de 100k negocios) → cerem o pagină pe rând,
+     cu căutare server-side. `cache` ține DOAR pagina curentă (suficient pentru
+     editar/eliminar/destacar, care acționează pe rândurile vizibile). */
+  let bizPage = 1, bizQuery = '';
   async function renderBusinesses() {
-    let list;
-    try { list = await api.listBusinesses(); }
+    let resp;
+    try { resp = await api.listBusinessesPage({ page: bizPage, pageSize: 50, q: bizQuery || undefined }); }
     catch (e) { toast('No se pudieron cargar los negocios', 'err'); return; }
+    const list = resp.businesses || [];
+    bizPage = resp.page || 1;
     cache = list;
-    $('#bizCount').textContent = `${list.length} ${list.length === 1 ? 'negocio' : 'negocios'} en el directorio`;
+    const totalTxt = `${resp.total} ${resp.total === 1 ? 'negocio' : 'negocios'}${bizQuery ? ' (filtrado)' : ' en el directorio'}`;
+    $('#bizCount').textContent = resp.pages > 1 ? `${totalTxt} · página ${resp.page} de ${resp.pages}` : totalTxt;
+    renderBizPager(resp);
     const rows = $('#bizRows');
     if (!list.length) {
-      rows.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--muted)">No hay negocios. <a href="#" id="emptyNew">Añade el primero</a>.</td></tr>`;
+      rows.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--muted)">${bizQuery ? 'No hay resultados para la búsqueda.' : 'No hay negocios. <a href="#" id="emptyNew">Añade el primero</a>.'}</td></tr>`;
       const en = $('#emptyNew'); if (en) en.addEventListener('click', e => { e.preventDefault(); openDrawer(); });
       return;
     }
@@ -89,6 +97,17 @@
       </tr>`).join('');
   }
   function bizPhoto(b) { return (b && b.photo) ? b.photo : D.placeholderImage(b ? b.name : ''); }
+  function renderBizPager(resp) {
+    const el = $('#bizPager'); if (!el) return;
+    if (!resp || resp.pages <= 1) { el.innerHTML = ''; return; }
+    el.innerHTML = `
+      <button class="btn btn-ghost btn-sm" id="bizPrev" ${resp.page <= 1 ? 'disabled' : ''}>← Anterior</button>
+      <span class="muted">Página ${resp.page} de ${resp.pages}</span>
+      <button class="btn btn-ghost btn-sm" id="bizNext" ${resp.page >= resp.pages ? 'disabled' : ''}>Siguiente →</button>`;
+    const prev = $('#bizPrev'), next = $('#bizNext');
+    if (prev) prev.addEventListener('click', () => { if (bizPage > 1) { bizPage--; renderBusinesses(); } });
+    if (next) next.addEventListener('click', () => { if (bizPage < resp.pages) { bizPage++; renderBusinesses(); } });
+  }
 
   function bindBusinesses() {
     $('#bizRows').addEventListener('click', async e => {
@@ -105,6 +124,14 @@
       }
     });
     $('#newBtn').addEventListener('click', () => openDrawer());
+    const searchEl = $('#bizSearch');
+    if (searchEl) {
+      let t;
+      searchEl.addEventListener('input', () => {
+        clearTimeout(t);
+        t = setTimeout(() => { bizQuery = searchEl.value.trim(); bizPage = 1; renderBusinesses(); }, 300);
+      });
+    }
     $('#exportBtn').addEventListener('click', doExport);
     $('#importBtn').addEventListener('click', () => $('#importInput').click());
     $('#importInput').addEventListener('change', doImport);

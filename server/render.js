@@ -725,9 +725,10 @@ function renderHome(ctx) {
   const distritos = DB.listDistritos();
   const zones = DB.listZones();
   const metros = DB.listMetros();
-  // Destacadas = lista curată „home" (primele 12); fallback: shuffle din toate.
+  // Destacadas = lista curată „home" (primele 12); fallback: shuffle din toate
+  // (light → hidratăm doar cele 12, nu materializăm toate cele 100k).
   let featList = DB.listHome({ pageSize: 12 }).items;
-  if (!featList.length) featList = DB.orderByContext(DB.listBusinesses({}), 'home').slice(0, 12);
+  if (!featList.length) featList = DB.listForContext('home', {}, { pageSize: 12 }).items;
   const total = DB.countBusinesses();
 
   const inlineData = {
@@ -809,11 +810,12 @@ function renderHome(ctx) {
 
 function renderSearch(ctx, q, page) {
   const query = String(q || '').trim();
-  const all = query ? DB.listBusinesses({ q: query }) : [];
+  // light (fără relații) pentru numărare/paginare; hidratăm doar pagina afișată.
+  const all = query ? DB.listBusinessesLight({ q: query }) : [];
   const pageSize = 20;
   const pages = Math.max(1, Math.ceil(all.length / pageSize));
   const p = Math.min(Math.max(1, parseInt(page, 10) || 1), pages);
-  const businesses = all.slice((p - 1) * pageSize, p * pageSize);
+  const businesses = all.slice((p - 1) * pageSize, p * pageSize).map(b => DB.getBusiness(b.id)).filter(Boolean);
   const baseHref = '/buscar?q=' + encodeURIComponent(query);
   const pg = query && all.length ? { page: p, pages, baseHref } : null;
   const body = `<div class="container">
@@ -958,66 +960,78 @@ function render500(ctx) {
 }
 
 /* ---------------------------- Sitemap / robots ----------------------- */
-/* Cache simplu (per origin, TTL 10 min): sitemap-ul e costisitor (N+1). */
-const _sitemapCache = new Map();
+/* Un singur fișier de sitemap acceptă max 50.000 URL-uri (limita protocolului
+   + Google). La 100k negocios ne trebuie un SITEMAP INDEX care trimite spre
+   sub-sitemap-uri: unul cu paginile de taxonomie + N cu negocios (45k/bucată).
+   Astfel niciun fișier nu e uriaș și nu se construiește peste 100k obiecte. */
+const SITEMAP_CHUNK = 45000;                    // < 50.000, cu margine
+const _sitemapCache = new Map();                // per cheie (origin[:sub]), TTL 10 min
 const SITEMAP_TTL = 10 * 60 * 1000;
-
-function renderSitemap(ctx) {
-  const origin = (ctx && ctx.origin) || '';
-  const hit = _sitemapCache.get(origin);
+function _cachedXml(key, build) {
+  const hit = _sitemapCache.get(key);
   if (hit && Date.now() - hit.at < SITEMAP_TTL) return hit.xml;
-
-  const cats = DB.getCategoryTree();
-  const districts = DB.listDistricts();
-  const metros = DB.listMetros();
-  const zones = DB.listZones();
-  const businesses = DB.listBusinesses();
-
-  /* O singură trecere peste negocios → ce combinații au conținut real.
-     Includem în sitemap DOAR paginile cu ≥1 negocio (restul sunt noindex, ca să
-     nu irosim crawl budget pe cele ~10.000 de pagini goale). */
-  const cov = { cat: new Set(), catMun: new Set(), catBar: new Set(), catZona: new Set(), catMetro: new Set(), muni: new Set() };
-  businesses.forEach(b => {
-    const cslugs = new Set();
-    (b.categories || []).forEach(c => { cslugs.add(c.slug); if (c.parent_id) { const p = DB.getCategory(c.parent_id); if (p) cslugs.add(p.slug); } });
-    const d = b.district && b.district.slug;
-    const zona = b.district && b.district.zona;
-    const bar = b.neighborhood && b.neighborhood.slug;
-    if (d) cov.muni.add(d);
-    cslugs.forEach(cs => {
-      cov.cat.add(cs);
-      if (d) cov.catMun.add(cs + '|' + d);
-      if (d && bar) cov.catBar.add(cs + '|' + d + '|' + bar);
-      if (zona) cov.catZona.add(cs + '|' + zona);
-      (b.metros || []).forEach(m => cov.catMetro.add(cs + '|' + m.slug));
-    });
-  });
-
-  const entries = [];
-  const add = (loc, lastmod) => entries.push({ loc, lastmod });
-  add('/');
-  add('/zonas'); add('/metro'); add('/destacadas');
-  add('/aviso-legal'); add('/privacidad'); add('/cookies'); add('/condiciones');
-  districts.forEach(d => { if (cov.muni.has(d.slug)) add(`/zona/${d.slug}`); });
-  cats.forEach(c => {
-    if (cov.cat.has(c.slug)) add(`/${c.slug}`);
-    c.children.forEach(s => { if (cov.cat.has(s.slug)) add(`/${s.slug}`); });
-    zones.forEach(z => { if (cov.catZona.has(c.slug + '|' + z.slug)) add(`/${c.slug}/zona/${z.slug}`); });
-    districts.forEach(d => {
-      if (cov.catMun.has(c.slug + '|' + d.slug)) add(`/${c.slug}/${d.slug}`);
-      DB.listNeighborhoods(d.id).forEach(b => { if (cov.catBar.has(c.slug + '|' + d.slug + '|' + b.slug)) add(`/${c.slug}/${d.slug}/${b.slug}`); });
-    });
-    metros.forEach(m => { if (cov.catMetro.has(c.slug + '|' + m.slug)) add(`/${c.slug}/metro/${m.slug}`); });
-  });
-  metros.forEach(m => add(`/metro/${m.slug}`));
-  businesses.forEach(b => add(`/negocio/${b.id}`, b.created_at ? new Date(b.created_at * 1000).toISOString().slice(0, 10) : null));
-
-  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+  const xml = build();
+  _sitemapCache.set(key, { xml, at: Date.now() });
+  return xml;
+}
+function urlsetXml(ctx, entries) {
+  return `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 ${entries.map(e => `  <url><loc>${esc(abs(ctx, e.loc))}</loc>${e.lastmod ? `<lastmod>${e.lastmod}</lastmod>` : ''}</url>`).join('\n')}
 </urlset>`;
-  _sitemapCache.set(origin, { xml, at: Date.now() });
-  return xml;
+}
+
+/* /sitemap.xml → INDEX: 1 sitemap de pagini + câte unul la fiecare 45k negocios. */
+function renderSitemapIndex(ctx) {
+  const total = DB.countBusinesses();
+  const nBiz = Math.max(1, Math.ceil(total / SITEMAP_CHUNK));
+  const maps = ['/sitemap-paginas.xml'];
+  for (let i = 1; i <= nBiz; i++) maps.push(`/sitemap-negocios-${i}.xml`);
+  const lastmod = new Date().toISOString().slice(0, 10);
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${maps.map(m => `  <sitemap><loc>${esc(abs(ctx, m))}</loc><lastmod>${lastmod}</lastmod></sitemap>`).join('\n')}
+</sitemapindex>`;
+}
+
+/* Sitemap-ul paginilor de taxonomie (home + servicii × zonă/distrito/barrio/metro).
+   Acoperirea (ce pagini au ≥1 negocio) vine din SQL (DB.getSitemapCoverage),
+   nu dintr-o trecere N+1 peste toate negocios. Cache 10 min per origin. */
+function renderSitemapPaginas(ctx) {
+  return _cachedXml((ctx && ctx.origin || '') + ':paginas', () => {
+    const cov = DB.getSitemapCoverage();
+    const cats = DB.getCategoryTree();
+    const districts = DB.listDistricts();
+    const metros = DB.listMetros();
+    const zones = DB.listZones();
+    const entries = [];
+    const add = loc => entries.push({ loc });
+    add('/'); add('/zonas'); add('/metro'); add('/destacadas');
+    add('/aviso-legal'); add('/privacidad'); add('/cookies'); add('/condiciones');
+    districts.forEach(d => { if (cov.muni.has(d.slug)) add(`/zona/${d.slug}`); });
+    cats.forEach(c => {
+      if (cov.cat.has(c.slug)) add(`/${c.slug}`);
+      c.children.forEach(s => { if (cov.cat.has(s.slug)) add(`/${s.slug}`); });
+      zones.forEach(z => { if (cov.catZona.has(c.slug + '|' + z.slug)) add(`/${c.slug}/zona/${z.slug}`); });
+      districts.forEach(d => {
+        if (cov.catMun.has(c.slug + '|' + d.slug)) add(`/${c.slug}/${d.slug}`);
+        DB.listNeighborhoods(d.id).forEach(b => { if (cov.catBar.has(c.slug + '|' + d.slug + '|' + b.slug)) add(`/${c.slug}/${d.slug}/${b.slug}`); });
+      });
+      metros.forEach(m => { if (cov.catMetro.has(c.slug + '|' + m.slug)) add(`/${c.slug}/metro/${m.slug}`); });
+    });
+    metros.forEach(m => add(`/metro/${m.slug}`));
+    return urlsetXml(ctx, entries);
+  });
+}
+
+/* Sitemap-ul negocios, bucata `page` (1-based), max 45k URL-uri, id-uri din SQL. */
+function renderSitemapNegocios(ctx, page) {
+  const p = Math.max(1, parseInt(page, 10) || 1);
+  const rows = DB.listBusinessSitemap((p - 1) * SITEMAP_CHUNK, SITEMAP_CHUNK);
+  return urlsetXml(ctx, rows.map(b => ({
+    loc: `/negocio/${b.id}`,
+    lastmod: b.created_at ? new Date(b.created_at * 1000).toISOString().slice(0, 10) : null,
+  })));
 }
 function renderRobots(ctx) {
   return `User-agent: *
@@ -1034,5 +1048,6 @@ module.exports = {
   SITE,
   renderHome, renderCategory, renderCategoryZona, renderDistrict, renderBarrio, renderCategoryMetro,
   renderZoneDistrict, renderZoneBarrio, renderZonesIndex, renderMetroIndex, renderMetroHub,
-  renderBusiness, renderDestacadas, renderSearch, renderLegal, render404, render500, renderSitemap, renderRobots,
+  renderBusiness, renderDestacadas, renderSearch, renderLegal, render404, render500,
+  renderSitemapIndex, renderSitemapPaginas, renderSitemapNegocios, renderRobots,
 };
