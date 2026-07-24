@@ -1,64 +1,55 @@
-# PLAN — Directorio Dental Madrid
+# PLAN — Reformas Madrid
 
-> **Stare:** Faza 1 (site static) ✅ + **Faza 2 (backend real) ✅**. Aplicația e acum full-stack
-> (Node + Express + SQLite), fără Supabase. Vezi secțiunea „Faza 2" jos și `README.md` pentru rulare.
+> **Estado:** full-stack en producción. SSR con Node + Express, SQLite en local y
+> **Supabase Postgres** en Vercel. Directorio SEO de profesionales de reformas y
+> servicios para el hogar en la Comunidad de Madrid. UI en español.
+>
+> Este proyecto **pivotó** desde un antiguo directorio de clínicas dentales; toda
+> la lógica dental se ha retirado. Para arrancar, ver `README.md`; para desplegar,
+> `DEPLOY-VERCEL.md`.
 
-## Context
-Director web pentru **clinici dentare din Madrid**: simplu, modern, profesional. Home cu **bară de
-search**, listări în **grid (6 pe desktop / 2 pe telefon)**, **modal** cu toate detaliile la click,
-plus un **dashboard de admin** (CRUD + statistici). Ca preview: **3 clinici demo** (fictive) în spaniolă.
+## Contexto
+Directorio que conecta a usuarios con **profesionales de reformas y servicios para
+el hogar** (fontaneros, electricistas, cerrajeros, climatización, control de plagas,
+mudanzas, talleres, reformas) en los **179 municipios** de la Comunidad de Madrid y
+los 21 distritos de la capital. Objetivo de negocio: **posicionar en Google** (SEO
+programático) y **captar leads** (solicitudes de presupuesto) para los profesionales.
 
-**Decizii:** site **static** (HTML/CSS/JS, fără instalare, fără CDN), conținut în **spaniolă**,
-persistență în **localStorage**, analytics **local/demo**. Backend real = pas următor (vezi README.md).
+## Arquitectura
+Servidor Express único (`server/server.js`, reexportado en `api/index.js` para Vercel).
 
-## Arhitectură
-- `data.js` — seed (3 clinici) + catalog servicii + zile + generator placeholder SVG.
-- `store.js` — strat localStorage: `getAll/get/add/update/remove/toggleFeatured/resetToSeed/exportJSON/importJSON`.
-- `analytics.js` — contor vizite/views/contacte + serie lunară + grafic SVG nativ.
-- `app.js` — home: grid, search live, filtre (zonă/serviciu), sortare, modal, deep-link `#clinica=slug`.
-- `admin.js` — gate parolă, CRUD, upload foto cu resize, export/import, statistici.
-- `styles.css` — design system (accent teal, carduri, modal, admin, chart).
+- `server/server.js` — rutas SSR + API REST, auth (cookie-session), upload, analítica, leads.
+- `server/render.js` — todo el HTML SSR con template literals (sin motor de plantillas): title/meta/canonical/OG/Twitter/JSON-LD únicos por página, internal linking denso, sitemap, robots.
+- `server/db.js` — esquema y consultas SQLite (`node:sqlite`, sin dependencias nativas).
+- `server/pgstore.js` — persistencia durable en Supabase Postgres (hidratar/volcar).
+- `server/seed.js` — seed inicial (geografía, categorías, metros, negocios demo).
+- `server/extract.js` — importador de negocios desde una URL (crawler sin IA).
+- `server/notify.js` — notificación best-effort de leads (webhook / Telegram / email Resend, por env).
+- `public/` — `admin.html`, `login.html`, `favicon.svg`, `assets/{css,js,img}`.
+- `data/` — `madrid-geo.json`, `madrid-municipios.json`, `madrid-barrios.json`.
 
-## Model de date (o clinică)
-`id, name, zone, address, about, services[], hours{7 zile}, phone, email, website,
-social{instagram,facebook,twitter,tiktok,linkedin,youtube}, rating, reviews, featured, photo`
+## Modelo de datos
+`categories` (árbol vía `parent_id`) · `districts` (distritos + municipios; `kind`/`zona`
+derivados del slug) · `neighborhoods` (barrios) · `metros` · `businesses` (con `logo`,
+`photos[]`) · `business_categories` · `business_metros` · `placements` (orden manual por
+contexto) · `events` (analítica, en memoria) · `leads` (solicitudes de presupuesto).
 
-## Funcționalități livrate
-- [x] Home: hero + **search live** + statistici
-- [x] **Grid responsive** 6 / 4 / 3 / 2 coloane
-- [x] Filtre **zonă** + **serviciu** + sortare (destacadas / rating / nume)
-- [x] **Modal** detalii: foto, sobre nosotros, servicii, orar (evidențiază ziua curentă), contact, rețele
-- [x] **Deep-link** `#clinica=slug` (partajabil, ca o pagină)
-- [x] Admin **gate** (parolă client) + **CRUD** complet
-- [x] **Upload foto** cu redimensionare pe client (data-URL în localStorage)
-- [x] **Export / Import JSON** + **Restaurar demo**
-- [x] **Statistici**: vizite/lună (grafic), fișe vizualizate, clicuri contact, top clinici
-- [x] 3 clinici demo (Salamanca, Chamberí, Malasaña)
+Modo de ejecución: con `DATABASE_URL` o en Vercel → SQLite `:memory:` + Postgres como
+almacén durable; en local sin Supabase → SQLite en disco (`server/data.db`).
 
-## Limitări conștiente (versiune statică)
-- Date + poze în **localStorage** (fără sync între dispozitive) → mitigat cu export/import.
-- Analytics **local/demo** (nu vizitatori reali agregați).
-- Parola de admin **nu e securitate reală** (client-side).
+## Funcionalidades
+- [x] Páginas SEO: home, categoría, categoría×distrito/municipio, ×barrio, ×metro, ×zona, ficha de negocio, zonas, metro, búsqueda, legales (RGPD/LSSI).
+- [x] Ranking manual (drag & drop) por contexto; orden por defecto = shuffle determinista.
+- [x] Logo + galería de servicios por negocio.
+- [x] **Captación de leads**: formulario “Solicitar presupuesto” en la ficha y en las páginas de listado (incl. las vacías) → tabla `leads` → notificación (webhook/Telegram/email) → bandeja de entrada en `/admin`.
+- [x] Panel de administración: CRUD de negocios, taxonomía, tablero de orden, estadísticas, bandeja de leads; import desde URL; export/import JSON.
+- [x] Push server-to-server desde el CRM “100k MRR” (`POST /api/businesses` con `x-api-token`, permiso mínimo).
+- [x] **Seguridad**: bloqueo del panel si `ADMIN_PASSWORD`/`SESSION_SECRET` están por defecto en producción; rate-limit de login; cabeceras de seguridad; token de API con permisos mínimos.
+- [x] **SEO anti-thin**: `noindex,follow` en listados vacíos y en `/buscar`; sitemap solo con páginas con contenido + `<lastmod>` + caché.
+- [x] Analítica (Plausible/GA4) opcional, cargada **solo tras el consentimiento** de cookies.
 
----
-
-## Faza 2 — Backend real (implementat, fără Supabase)
-
-Aplicația a fost transformată din static în full-stack, **local/self-hosted**:
-
-- **Node.js + Express** — servește `public/` + un API REST.
-- **SQLite** prin `node:sqlite` (built-in Node 22+/24) — persistență reală într-un fișier (`server/data.db`), **fără dependențe native**. Tabele: `clinics`, `events`.
-- **Login admin real** — `cookie-session` semnat, credențiale din `.env`, comparație `timingSafeEqual`, middleware `requireAuth` pe scriere. Pagină `login.html`; `admin.html` redirecționează dacă nu ești autentificat.
-- **Upload poze pe server** — `POST /api/upload` (dataURL redimensionat pe client) scrie fișier în `uploads/`, salvează URL-ul.
-- **Analytics real** — serverul înregistrează `visit`/`view`/`contact` în `events`; `GET /api/stats` agreghează pe lună (SQL). Vizite dedupe pe cookie de sesiune.
-- **Frontend pe API** — module: `ui.js` (comun), `api.js` (fetch), `app.js` (home), `admin.js` (admin). Fără localStorage.
-
-**Arhitectură fișiere:** `server/{server.js,db.js,seed.js}` + `public/{index,admin,login}.html` + `public/assets/js/{ui,api,app,admin}.js`.
-Rulare: `npm install && npm start` → `http://localhost:3000` (detalii + `.env` + deploy în `README.md`).
-
-**Limitările fazei 1 (static) sunt rezolvate:** date partajate între dispozitive (DB pe server), analytics real agregat, login real.
-
-## Pași următori (opțional)
-- HTTPS în producție (reverse proxy) + disc persistent pentru `data.db`/`uploads` la deploy.
-- Curățare poze orfane la ștergerea unei clinici; token CSRF explicit; rate-limiting pe login.
-- Pagină de detaliu dedicată (URL propriu) pe lângă modal; hartă; formular „Añade tu clínica".
+## Próximos pasos (ideas)
+- Almacenar imágenes en object storage/CDN (hoy inline base64 en Postgres) con WebP + `srcset`.
+- Contenido local único por municipio/barrio para que más páginas superen el umbral de indexación.
+- Extender el tablero de orden a los contextos de metro/municipio/barrio que hoy solo tienen shuffle.
+- Alta de profesionales (self-signup) — hoy es un “próximamente”.

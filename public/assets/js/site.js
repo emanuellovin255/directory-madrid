@@ -67,6 +67,38 @@
     });
   }
 
+  /* ----------------------- Solicitud de presupuesto -------------------- */
+  function leadFeedback(fb, kind, msg) {
+    if (!fb) return;
+    fb.hidden = false;
+    fb.className = 'lead-feedback lead-feedback-' + kind;
+    fb.textContent = msg;
+  }
+  document.querySelectorAll('form[data-lead-form]').forEach(function (f) {
+    f.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var fb = f.querySelector('.lead-feedback');
+      var btn = f.querySelector('button[type="submit"]');
+      var get = function (n) { var el = f.elements.namedItem(n); return el ? String(el.value || '').trim() : ''; };
+      var payload = {
+        name: get('name'), phone: get('phone'), email: get('email'), message: get('message'),
+        businessId: get('businessId'), context: get('context'), hp: get('hp'), sourceUrl: location.href,
+      };
+      if (payload.name.length < 2) { leadFeedback(fb, 'error', 'Indica tu nombre.'); return; }
+      if (!payload.phone && !payload.email) { leadFeedback(fb, 'error', 'Indica un teléfono o un email de contacto.'); return; }
+      if (!api) { leadFeedback(fb, 'error', 'No se pudo enviar. Recarga la página e inténtalo de nuevo.'); return; }
+      leadFeedback(fb, 'pending', 'Enviando…');
+      if (btn) { btn.dataset.label = btn.dataset.label || btn.textContent; btn.disabled = true; btn.textContent = 'Enviando…'; }
+      api.submitLead(payload).then(function () {
+        Array.prototype.forEach.call(f.querySelectorAll('.lead-row, .lead-field-full, .lead-actions, .lead-note'), function (x) { x.hidden = true; });
+        leadFeedback(fb, 'ok', '¡Gracias! Hemos recibido tu solicitud. Te contactaremos lo antes posible.');
+      }).catch(function (err) {
+        leadFeedback(fb, 'error', (err && err.message) || 'No se pudo enviar. Inténtalo de nuevo.');
+        if (btn) { btn.disabled = false; btn.textContent = btn.dataset.label || 'Solicitar presupuesto'; }
+      });
+    });
+  });
+
   /* ------------------------------ Analítica ---------------------------- */
   if (api) {
     api.trackVisit();

@@ -60,6 +60,12 @@ CREATE TABLE IF NOT EXISTS placements (
   context TEXT NOT NULL, business_id TEXT NOT NULL, position INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (context, business_id)
 );
+CREATE TABLE IF NOT EXISTS leads (
+  id TEXT PRIMARY KEY, business_id TEXT, name TEXT NOT NULL, phone TEXT, email TEXT,
+  message TEXT, context TEXT, source_url TEXT, status TEXT NOT NULL DEFAULT 'new',
+  created_at BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status, created_at DESC);
 `;
 
 /* Coloane adăugate ulterior — Postgres CREATE TABLE IF NOT EXISTS nu le adaugă
@@ -173,4 +179,47 @@ function normalizeForSqlite(v) {
   return v;
 }
 
-module.exports = { init, isEnabled, ensureSchema, hydrate, dump, TABLES, TABLE_NAMES, DDL };
+/* ------------------------------- Leads -------------------------------- */
+/* Append-only, INTENȚIONAT în afara snapshot-ului (dump/hydrate): scriere și
+   citire directe în Postgres, ca un lead să nu poată fi suprascris de rescrierea
+   completă a stării de la o altă instanță serverless. */
+async function insertLead(row) {
+  if (!enabled) return;
+  await pool.query(
+    `INSERT INTO leads (id,business_id,name,phone,email,message,context,source_url,status,created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+    [row.id, row.business_id, row.name, row.phone, row.email, row.message, row.context, row.source_url, row.status, row.created_at]);
+}
+async function listLeads(filter) {
+  if (!enabled) return [];
+  filter = filter || {};
+  const params = []; let where = '';
+  if (filter.status) { params.push(filter.status); where = 'WHERE l.status = $1'; }
+  const { rows } = await pool.query(
+    `SELECT l.*, b.name AS business_name FROM leads l
+     LEFT JOIN businesses b ON b.id = l.business_id
+     ${where} ORDER BY l.created_at DESC, l.id DESC LIMIT 500`, params);
+  return rows;
+}
+async function countLeadsByStatus() {
+  if (!enabled) return [];
+  const { rows } = await pool.query('SELECT status, COUNT(*)::int AS c FROM leads GROUP BY status');
+  return rows;
+}
+async function updateLeadStatus(id, status) {
+  if (!enabled) return null;
+  const { rows } = await pool.query('UPDATE leads SET status=$2 WHERE id=$1 RETURNING *', [id, status]);
+  const r = rows[0];
+  if (r && r.business_id) { const b = await pool.query('SELECT name FROM businesses WHERE id=$1', [r.business_id]); r.business_name = b.rows[0] ? b.rows[0].name : null; }
+  return r || null;
+}
+async function deleteLead(id) {
+  if (!enabled) return false;
+  const r = await pool.query('DELETE FROM leads WHERE id=$1', [id]);
+  return r.rowCount > 0;
+}
+
+module.exports = {
+  init, isEnabled, ensureSchema, hydrate, dump, TABLES, TABLE_NAMES, DDL,
+  insertLead, listLeads, countLeadsByStatus, updateLeadStatus, deleteLead,
+};

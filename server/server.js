@@ -23,6 +23,7 @@ const cookieSession = require('cookie-session');
 const DB = require('./db');
 const { seedIfEmpty, ensureCategories, ensureMunicipios, DEMO_BUSINESSES } = require('./seed');
 const { extractFromUrl } = require('./extract');
+const { notifyLead } = require('./notify');
 const R = require('./render');
 
 const PORT = process.env.PORT || 3000;
@@ -32,6 +33,19 @@ const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-insecure-secret-change
 // Token pentru integrări server-to-server (ex. push de leaduri din CRM „100k MRR").
 // Gol = dezactivat (rămâne doar auth pe sesiune). Vezi requireAuth.
 const API_TOKEN = process.env.API_TOKEN || '';
+
+/* Securitate: în producție (Vercel sau Supabase) NU permitem credențiale/secret
+   pe default. Cu SESSION_SECRET default cookie-ul de sesiune e forjabil, iar cu
+   parola „admin" contul e trivial de spart → blocăm complet administrarea până
+   la configurare, dar lăsăm site-ul public (SEO + leaduri) să funcționeze. */
+const IS_PROD = !!(process.env.VERCEL || process.env.DATABASE_URL);
+const USING_DEFAULT_SECRET = SESSION_SECRET === 'dev-insecure-secret-change-me';
+const USING_DEFAULT_PASSWORD = ADMIN_PASSWORD === 'admin';
+const INSECURE_PROD = IS_PROD && (USING_DEFAULT_SECRET || USING_DEFAULT_PASSWORD);
+if (INSECURE_PROD) {
+  console.error('🔒 SEGURIDAD: ADMIN_PASSWORD y/o SESSION_SECRET están por defecto en producción.');
+  console.error('   El panel de administración queda BLOQUEADO hasta configurarlos (ver DEPLOY-VERCEL.md).');
+}
 
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, '..', 'uploads');
@@ -82,6 +96,7 @@ async function saveAndRespond(res, payload, status) {
 /* ------------------------------ App ----------------------------------- */
 const app = express();
 app.disable('x-powered-by');
+app.set('trust proxy', true);   // pe Vercel: req.ip din X-Forwarded-For (pentru rate-limit)
 app.use(express.json({ limit: '8mb' }));
 app.use(cookieSession({
   name: 'rm_sess',
@@ -90,6 +105,16 @@ app.use(cookieSession({
   sameSite: 'lax',
   maxAge: 30 * 24 * 60 * 60 * 1000,
 }));
+
+/* Antete de securitate de bază (fără dependențe tip helmet). */
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('X-DNS-Prefetch-Control', 'off');
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+  next();
+});
 
 /* Așteaptă bootstrap-ul (hidratare Postgres + seed) înainte de orice cerere. */
 app.use((req, res, next) => { ready.then(() => next()).catch(next); });
@@ -104,16 +129,45 @@ function safeEqual(a, b) {
   if (ba.length !== bb.length) return false;
   return crypto.timingSafeEqual(ba, bb);
 }
+/* Doar sesiune (admin uman în browser). FĂRĂ bypass pe token → protejează
+   rutele sensibile: export, import (replace-all), reset-demo, placements,
+   upload, extract, stats și inbox-ul de leaduri. Un token scurs NU le atinge. */
 function requireAuth(req, res, next) {
+  // Producție nesigură (secret/parolă pe default) → refuzăm orice scriere,
+  // chiar și cu un cookie de sesiune forjat, până la configurarea secretelor.
+  if (INSECURE_PROD) return res.status(503).json({ error: 'Administración deshabilitada: configura ADMIN_PASSWORD y SESSION_SECRET en el servidor.' });
   if (req.session && req.session.user) return next();
-  // Bypass pe token pentru integrări server-to-server (headerul x-api-token).
+  return res.status(401).json({ error: 'No autorizado' });
+}
+/* Sesiune SAU token server-to-server. DOAR pentru push de negocios din CRM.
+   Tokenul (API_TOKEN, secret separat) e acceptat mereu; calea de sesiune rămâne
+   blocată în producție nesigură (cookie forjabil). */
+function requireAuthOrToken(req, res, next) {
   const token = req.get('x-api-token');
   if (API_TOKEN && token && safeEqual(token, API_TOKEN)) return next();
+  if (INSECURE_PROD) return res.status(503).json({ error: 'Administración deshabilitada: configura ADMIN_PASSWORD y SESSION_SECRET en el servidor.' });
+  if (req.session && req.session.user) return next();
   return res.status(401).json({ error: 'No autorizado' });
 }
 const ok = (res, data) => res.json(data);
 function ctx(req) { return { origin: req.protocol + '://' + req.get('host'), path: req.path }; }
 function sendHtml(res, html, status) { res.status(status || 200).type('html').send(html); }
+
+/* Rate-limiter simplu, in-memory (per-instanță). Suficient pentru a încetini
+   brute-force/spam; pe serverless memoria e per-instanță, dar tot ajută. */
+function makeRateLimiter(max, windowMs) {
+  const hits = new Map();
+  return function allow(key) {
+    const t = Date.now();
+    const arr = (hits.get(key) || []).filter(x => t - x < windowMs);
+    arr.push(t);
+    hits.set(key, arr);
+    if (hits.size > 5000) for (const [k, v] of hits) if (!v.some(x => t - x < windowMs)) hits.delete(k);
+    return arr.length <= max;
+  };
+}
+const leadLimiter = makeRateLimiter(6, 10 * 60 * 1000);   // 6 leaduri / 10 min / IP
+const loginLimiter = makeRateLimiter(8, 10 * 60 * 1000);  // 8 încercări / 10 min / IP
 
 /* Parsează + validează o cheie de context de clasament (placements).
    Forme: 'home' | 'cat:<slug>' | 'cat:<slug>:zona:<z>' | 'cat:<slug>:mun:<d>'. */
@@ -144,6 +198,8 @@ const slimBiz = b => ({ id: b.id, name: b.name, zone: b.zone || '', featured: !!
 /* =============================== API =================================== */
 /* ------------------------------- Auth --------------------------------- */
 app.post('/api/auth/login', (req, res) => {
+  if (INSECURE_PROD) return res.status(503).json({ error: 'Administración deshabilitada: configura ADMIN_PASSWORD y SESSION_SECRET.' });
+  if (!loginLimiter(req.ip || 'unknown')) return res.status(429).json({ error: 'Demasiados intentos. Espera unos minutos e inténtalo de nuevo.' });
   const { username, password } = req.body || {};
   const good = safeEqual(username || '', ADMIN_USERNAME) && safeEqual(password || '', ADMIN_PASSWORD);
   if (!good) return res.status(401).json({ error: 'Usuario o contraseña incorrectos' });
@@ -164,7 +220,8 @@ app.get('/api/businesses/:id', (req, res) => {
   const b = DB.getBusiness(req.params.id);
   return b ? ok(res, b) : res.status(404).json({ error: 'No encontrada' });
 });
-app.post('/api/businesses', requireAuth, async (req, res) => {
+/* Singura rută cu bypass pe token: push de negocios din CRM „100k MRR". */
+app.post('/api/businesses', requireAuthOrToken, async (req, res) => {
   if (!req.body || !String(req.body.name || '').trim()) return res.status(400).json({ error: 'El nombre es obligatorio' });
   return saveAndRespond(res, DB.insertBusiness(req.body), 201);
 });
@@ -288,6 +345,40 @@ app.post('/api/track/contact', (req, res) => {
 app.get('/api/stats', requireAuth, (req, res) => ok(res, DB.getStats()));
 app.post('/api/analytics/reset', requireAuth, (req, res) => { DB.clearEvents(); seedIfEmpty(); ok(res, DB.getStats()); });
 
+/* ------------------------------- Leads -------------------------------- */
+/* Cerere de presupuesto trimisă de un vizitator — PUBLIC (fără auth). */
+app.post('/api/leads', async (req, res) => {
+  const body = req.body || {};
+  // Honeypot: câmp ascuns completat doar de boți → răspundem OK, dar îl ignorăm.
+  if (String(body.hp || '').trim()) return ok(res, { ok: true });
+  const name = String(body.name || '').trim();
+  const phone = String(body.phone || '').trim();
+  const email = String(body.email || '').trim();
+  if (name.length < 2) return res.status(400).json({ error: 'Indica tu nombre.' });
+  if (!phone && !email) return res.status(400).json({ error: 'Indica un teléfono o un email de contacto.' });
+  if (!leadLimiter(req.ip || 'unknown')) return res.status(429).json({ error: 'Demasiadas solicitudes. Inténtalo de nuevo en unos minutos.' });
+  const biz = body.businessId ? DB.getBusiness(String(body.businessId)) : null;
+  let lead;
+  try {
+    lead = await DB.createLead({ businessId: biz ? biz.id : null, name, phone, email, message: body.message, context: body.context, sourceUrl: body.sourceUrl });
+  } catch (e) { console.error('lead insert error:', e); return res.status(500).json({ error: 'No se pudo enviar la solicitud. Inténtalo de nuevo.' }); }
+  if (biz) lead.businessName = biz.name;
+  try { await notifyLead(lead, { siteName: R.SITE.name }); } catch (e) { console.error('notify error:', e); }
+  ok(res, { ok: true });
+});
+/* Inbox admin. */
+app.get('/api/leads', requireAuth, async (req, res) => {
+  const [leads, counts] = await Promise.all([DB.getLeads({ status: req.query.status }), DB.getLeadCounts()]);
+  ok(res, { leads, counts });
+});
+app.patch('/api/leads/:id', requireAuth, async (req, res) => {
+  const updated = await DB.setLeadStatus(req.params.id, (req.body || {}).status);
+  return updated ? ok(res, updated) : res.status(400).json({ error: 'Estado o lead no válido' });
+});
+app.delete('/api/leads/:id', requireAuth, async (req, res) => {
+  return (await DB.deleteLead(req.params.id)) ? ok(res, { ok: true }) : res.status(404).json({ error: 'No encontrado' });
+});
+
 /* -------------------------- Placements / clasament -------------------- */
 /* Board-ul e admin-only (întoarce și pool-ul de adăugat) → requireAuth. */
 app.get('/api/placements/:context', requireAuth, (req, res) => {
@@ -402,7 +493,11 @@ app.use((req, res, next) => {
 });
 app.use((err, req, res, next) => {
   console.error(err);
-  res.status(500).send('Error del servidor');
+  if (res.headersSent) return next(err);
+  // API → JSON; paginile → 500 stilizat (cu fallback la text dacă și randarea cade).
+  if (req.path && req.path.startsWith('/api/')) return res.status(500).json({ error: 'Error del servidor' });
+  try { return sendHtml(res, R.render500(ctx(req)), 500); }
+  catch { return res.status(500).type('text').send('Error del servidor'); }
 });
 
 /* Pe serverless (Vercel) exportăm app-ul ca handler — fără listen.

@@ -583,6 +583,96 @@
     });
   }
 
+  /* ------------------------------- Leads -------------------------------- */
+  let leadStatus = '';
+  const LEAD_LABEL = { new: 'Nuevo', contacted: 'Contactado', archived: 'Archivado' };
+  function leadTimeAgo(ts) {
+    const s = Math.max(0, Math.floor(Date.now() / 1000) - (Number(ts) || 0));
+    if (s < 60) return 'ahora';
+    const m = Math.floor(s / 60); if (m < 60) return 'hace ' + m + ' min';
+    const h = Math.floor(m / 60); if (h < 24) return 'hace ' + h + ' h';
+    const d = Math.floor(h / 24); if (d < 30) return 'hace ' + d + ' d';
+    return new Date((Number(ts) || 0) * 1000).toLocaleDateString('es-ES');
+  }
+  function updateLeadBadge(counts) {
+    const el = $('#leadsBadge'); if (!el) return;
+    const n = (counts && counts.new) || 0;
+    el.textContent = n;
+    el.classList.toggle('hidden', !n);
+  }
+  async function refreshLeadBadge() {
+    try { const d = await api.leads('new'); updateLeadBadge(d.counts); } catch { /* ignoră */ }
+  }
+  function leadCard(l) {
+    const contact = [
+      l.phone ? `<a href="tel:${attr(l.phone)}">${IC.phone}${esc(l.phone)}</a>` : '',
+      l.email ? `<a href="mailto:${attr(l.email)}">${IC.mail}${esc(l.email)}</a>` : '',
+    ].filter(Boolean).join('');
+    const meta = [
+      l.businessName ? `Negocio: <a href="/negocio/${attr(l.business_id)}" target="_blank" rel="noopener">${esc(l.businessName)}</a>` : '',
+      l.context ? esc(l.context) : '',
+    ].filter(Boolean).join(' · ');
+    return `<div class="lead-item lead-status-${attr(l.status)}" data-id="${attr(l.id)}">
+        <div class="lead-item-main">
+          <div class="lead-item-top">
+            <span class="lead-name">${esc(l.name)}</span>
+            <span class="lead-badge lead-badge-${attr(l.status)}">${esc(LEAD_LABEL[l.status] || l.status)}</span>
+            <span class="lead-time">${esc(leadTimeAgo(l.created_at))}</span>
+          </div>
+          ${contact ? `<div class="lead-contact">${contact}</div>` : ''}
+          ${l.message ? `<p class="lead-msg">${esc(l.message)}</p>` : ''}
+          ${meta ? `<div class="lead-meta">${meta}</div>` : ''}
+        </div>
+        <div class="lead-item-actions">
+          ${l.status !== 'contacted' ? `<button class="btn btn-soft btn-sm" data-act="contacted">${IC.check} Contactado</button>` : ''}
+          ${l.status !== 'archived' ? `<button class="btn btn-ghost btn-sm" data-act="archived">Archivar</button>` : ''}
+          ${l.status !== 'new' ? `<button class="btn btn-ghost btn-sm" data-act="new">Reabrir</button>` : ''}
+          <button class="btn btn-ghost btn-sm lead-del" data-act="delete" title="Eliminar">${IC.trash}</button>
+        </div>
+      </div>`;
+  }
+  async function renderLeads() {
+    const list = $('#leadList');
+    let d;
+    try { d = await api.leads(leadStatus); }
+    catch (e) { if (e.status === 401) return location.replace('login.html'); list.innerHTML = '<p class="muted">No se pudieron cargar los leads.</p>'; return; }
+    const c = d.counts || { new: 0, contacted: 0, archived: 0, total: 0 };
+    updateLeadBadge(c);
+    $('#leadCounts').innerHTML =
+      statCard('teal', IC.card, c.total, 'Total') +
+      statCard('blue', IC.users, c.new, 'Nuevos') +
+      statCard('gold', IC.check, c.contacted, 'Contactados') +
+      statCard('pink', IC.trash, c.archived, 'Archivados');
+    if (!d.leads.length) {
+      list.innerHTML = '<p class="muted" style="padding:10px 2px">' + (leadStatus ? 'No hay leads en este estado.' : 'No hay leads todavía. Cuando un visitante pida presupuesto, aparecerá aquí.') + '</p>';
+      return;
+    }
+    list.innerHTML = d.leads.map(leadCard).join('');
+  }
+  function bindLeads() {
+    $('#leadFilter').addEventListener('click', e => {
+      const b = e.target.closest('[data-status]'); if (!b) return;
+      leadStatus = b.dataset.status || '';
+      $$('#leadFilter [data-status]').forEach(x => {
+        const on = x === b;
+        x.classList.toggle('is-active', on);
+        x.classList.toggle('btn-soft', on);
+        x.classList.toggle('btn-ghost', !on);
+      });
+      renderLeads();
+    });
+    $('#leadList').addEventListener('click', async e => {
+      const btn = e.target.closest('[data-act]'); if (!btn) return;
+      const item = btn.closest('.lead-item'); const id = item && item.dataset.id; if (!id) return;
+      const act = btn.dataset.act;
+      try {
+        if (act === 'delete') { if (!confirm('¿Eliminar este lead? No se puede deshacer.')) return; await api.deleteLead(id); toast('Lead eliminado'); }
+        else { await api.setLeadStatus(id, act); toast('Lead actualizado'); }
+        renderLeads();
+      } catch (err) { toast(err.status === 401 ? 'Sesión expirada' : 'No se pudo actualizar', 'err'); }
+    });
+  }
+
   /* ----------------------- Orden / Clasamentos -------------------------- */
   const ORD_PAGE = 20;
   let ordZones = [], ordInited = false;
@@ -732,9 +822,11 @@
   function switchView(v) {
     $$('.admin-nav-btn').forEach(b => b.classList.toggle('active', b.dataset.view === v));
     $('#view-negocios').classList.toggle('hidden', v !== 'negocios');
+    $('#view-leads').classList.toggle('hidden', v !== 'leads');
     $('#view-taxonomia').classList.toggle('hidden', v !== 'taxonomia');
     $('#view-orden').classList.toggle('hidden', v !== 'orden');
     $('#view-stats').classList.toggle('hidden', v !== 'stats');
+    if (v === 'leads') renderLeads();
     if (v === 'stats') renderStats();
     if (v === 'taxonomia') renderTaxonomy();
     if (v === 'orden') ordEnter();
@@ -750,11 +842,12 @@
     try { await loadTaxonomy(); } catch { toast('No se pudo cargar la taxonomía', 'err'); }
     fillDistrictSelects(); buildCategoryChecklist(); buildMetroChecklist();
 
-    bindBusinesses(); bindDrawer(); bindStats(); bindImport(); bindTaxonomy(); bindOrden();
+    bindBusinesses(); bindDrawer(); bindStats(); bindImport(); bindTaxonomy(); bindOrden(); bindLeads();
     $$('.admin-nav-btn').forEach(b => b.addEventListener('click', () => switchView(b.dataset.view)));
     $('#logoutBtn').addEventListener('click', async e => { e.preventDefault(); try { await api.logout(); } catch {} location.replace('login.html'); });
     $('#adminApp').classList.remove('hidden');
     renderBusinesses();
+    refreshLeadBadge();
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);

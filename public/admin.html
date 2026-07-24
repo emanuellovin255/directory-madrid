@@ -22,6 +22,11 @@
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
         Negocios
       </button>
+      <button class="admin-nav-btn" data-view="leads">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.4 5.5 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.4-6.5A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.8 1.5z"/></svg>
+        Leads
+        <span class="nav-badge hidden" id="leadsBadge">0</span>
+      </button>
       <button class="admin-nav-btn" data-view="taxonomia">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h18M3 12h18M3 17h18"/><circle cx="7" cy="7" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="17" cy="17" r="1"/></svg>
         Taxonomía
@@ -72,6 +77,23 @@
               <tbody id="bizRows"></tbody>
             </table>
           </div>
+        </div>
+      </section>
+
+      <!-- Vista: Leads -->
+      <section id="view-leads" class="hidden">
+        <div class="admin-head">
+          <div><h1>Leads</h1><p>Solicitudes de presupuesto enviadas por los visitantes</p></div>
+          <div class="admin-actions lead-filter" id="leadFilter">
+            <button class="btn btn-soft btn-sm is-active" data-status="">Todos</button>
+            <button class="btn btn-ghost btn-sm" data-status="new">Nuevos</button>
+            <button class="btn btn-ghost btn-sm" data-status="contacted">Contactados</button>
+            <button class="btn btn-ghost btn-sm" data-status="archived">Archivados</button>
+          </div>
+        </div>
+        <div class="stat-row" id="leadCounts"></div>
+        <div class="panel">
+          <div class="panel-pad"><div class="lead-list" id="leadList"><p class="muted">Cargando…</p></div></div>
         </div>
       </section>
 

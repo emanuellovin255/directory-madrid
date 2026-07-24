@@ -937,3 +937,85 @@ main { display: block; }
 .ord-add-row:hover { background: var(--surface-2); }
 .ord-add-row .ord-thumb { width: 32px; height: 32px; }
 .ord-add-row .ord-name { flex: 1; }
+
+/* ===================== Lead / solicitud de presupuesto ================ */
+.lead-cta {
+  margin: 26px 0; padding: 22px;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r); box-shadow: var(--sh-sm);
+}
+.lead-cta-compact { background: var(--surface-2); }
+.lead-cta-head { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 16px; }
+.lead-cta-ic {
+  flex: none; width: 44px; height: 44px; border-radius: 12px; color: #fff;
+  display: grid; place-items: center; background: var(--accent);
+  box-shadow: 0 4px 12px rgba(var(--accent-rgb), .35);
+}
+.lead-cta-ic .ic { width: 22px; height: 22px; }
+.lead-cta-head h2 { font-size: 20px; margin: 0 0 3px; }
+.lead-cta-head p { color: var(--muted); margin: 0; font-size: 14.5px; }
+.lead-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.lead-field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }
+.lead-field > span { font-size: 13px; font-weight: 600; color: var(--ink-2); }
+.lead-field input, .lead-field textarea {
+  width: 100%; border: 1px solid var(--line); border-radius: var(--r-sm);
+  padding: 11px 13px; font-size: 15px; font-family: inherit; background: var(--surface);
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.lead-field input:focus, .lead-field textarea:focus { outline: 0; border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-100); }
+.lead-field textarea { resize: vertical; min-height: 76px; }
+.lead-hp { position: absolute !important; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+.lead-actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 2px; }
+.lead-actions .btn { padding-inline: 22px; }
+.lead-hint { color: var(--muted); font-size: 13px; }
+.lead-note { color: var(--muted-2); font-size: 12.5px; margin: 12px 0 0; }
+.lead-note a { color: var(--muted); text-decoration: underline; }
+.lead-feedback { margin-top: 14px; padding: 12px 15px; border-radius: var(--r-sm); font-weight: 600; font-size: 14.5px; }
+.lead-feedback-ok { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+.lead-feedback-error { background: var(--danger-050); color: #b91c1c; border: 1px solid #fecaca; }
+.lead-feedback-pending { background: var(--surface-2); color: var(--muted); border: 1px solid var(--line); }
+/* En el aside de la ficha el formulario es estrecho → una sola columna */
+.biz-aside .lead-cta { padding: 18px; margin-top: 0; }
+.biz-aside .lead-row { grid-template-columns: 1fr; }
+@media (max-width: 720px) { .lead-row { grid-template-columns: 1fr; } }
+
+/* ===================== Admin · inbox de leads ========================= */
+.nav-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 20px; padding: 0 6px; margin-left: auto;
+  background: var(--accent); color: #fff; border-radius: 999px;
+  font-size: 12px; font-weight: 700; line-height: 1;
+}
+.lead-filter { display: flex; gap: 6px; flex-wrap: wrap; }
+.lead-filter .is-active { pointer-events: none; }
+.lead-list { display: flex; flex-direction: column; gap: 10px; }
+.lead-item {
+  display: flex; gap: 16px; justify-content: space-between; align-items: flex-start;
+  padding: 15px 16px; border: 1px solid var(--line); border-radius: var(--r-sm);
+  background: var(--surface); transition: border-color .15s ease, box-shadow .15s ease;
+}
+.lead-item:hover { box-shadow: var(--sh-sm); }
+.lead-status-new { border-left: 3px solid var(--accent); }
+.lead-status-contacted { border-left: 3px solid var(--success); }
+.lead-status-archived { opacity: .68; }
+.lead-item-main { min-width: 0; flex: 1; }
+.lead-item-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.lead-name { font-weight: 700; font-size: 15.5px; color: var(--ink); }
+.lead-badge { font-size: 11.5px; font-weight: 700; padding: 2px 9px; border-radius: 999px; text-transform: uppercase; letter-spacing: .3px; }
+.lead-badge-new { background: var(--accent-050); color: var(--accent-700); }
+.lead-badge-contacted { background: #ecfdf5; color: #047857; }
+.lead-badge-archived { background: var(--surface-2); color: var(--muted); }
+.lead-time { color: var(--muted-2); font-size: 12.5px; margin-left: auto; }
+.lead-contact { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 7px; }
+.lead-contact a { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); font-weight: 600; font-size: 14px; }
+.lead-contact a svg { width: 15px; height: 15px; color: var(--muted); }
+.lead-msg { margin: 9px 0 0; color: var(--ink-2); font-size: 14.5px; line-height: 1.5; white-space: pre-wrap; }
+.lead-meta { margin-top: 8px; color: var(--muted); font-size: 13px; }
+.lead-meta a { color: var(--accent); font-weight: 600; }
+.lead-item-actions { display: flex; flex-direction: column; gap: 6px; flex: none; align-items: stretch; }
+.lead-item-actions .btn { white-space: nowrap; justify-content: center; }
+.lead-item-actions .lead-del { color: var(--danger); padding-inline: 10px; }
+@media (max-width: 720px) {
+  .lead-item { flex-direction: column; }
+  .lead-item-actions { flex-direction: row; flex-wrap: wrap; width: 100%; }
+}

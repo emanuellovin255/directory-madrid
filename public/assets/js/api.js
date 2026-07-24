@@ -62,6 +62,12 @@ DDM.api = (function () {
     logout: () => req('POST', '/api/auth/logout'),
     me: () => req('GET', '/api/auth/me'),
 
+    // Leads
+    submitLead: payload => req('POST', '/api/leads', payload),
+    leads: status => req('GET', '/api/leads' + qs({ status })),
+    setLeadStatus: (id, status) => req('PATCH', '/api/leads/' + enc(id), { status }),
+    deleteLead: id => req('DELETE', '/api/leads/' + enc(id)),
+
     // Analytics
     trackVisit: () => req('POST', '/api/track/visit').catch(() => {}),
     trackView: id => req('POST', '/api/track/view/' + enc(id)).catch(() => {}),

@@ -15,11 +15,11 @@
       </span>
       <h2>Panel de administración</h2>
       <p>Inicia sesión para gestionar el directorio.</p>
-      <input type="text" class="input" id="username" placeholder="Usuario" autocomplete="username" value="admin" />
+      <input type="text" class="input" id="username" placeholder="Usuario" autocomplete="username" />
       <input type="password" class="input" id="password" placeholder="Contraseña" autocomplete="current-password" />
       <div class="gate-err" id="err"></div>
       <button type="submit" class="btn btn-primary btn-block" id="submitBtn">Entrar</button>
-      <div class="gate-hint">Configura usuario y contraseña en el archivo <code>.env</code>. Por defecto: <b>admin</b> / <b>admin</b>.</div>
+      <div class="gate-hint">Acceso restringido a administradores del directorio.</div>
       <div style="margin-top:14px"><a href="/" style="font-size:13px">← Volver al directorio</a></div>
     </form>
   </div>
@@ -38,7 +38,9 @@
         await DDM.api.login($('#username').value.trim(), $('#password').value);
         location.replace('admin.html');
       } catch (err) {
-        $('#err').textContent = err.status === 401 ? 'Usuario o contraseña incorrectos' : 'Error de conexión con el servidor';
+        $('#err').textContent = err.status === 401 ? 'Usuario o contraseña incorrectos'
+          : (err.status === 429 || err.status === 503) ? (err.message || 'Acceso no disponible ahora mismo')
+          : 'Error de conexión con el servidor';
         $('#password').select();
       } finally { $('#submitBtn').disabled = false; }
     });

@@ -97,6 +97,38 @@ function trustBadge(ic, title, sub) {
   return `<div class="trust-badge"><span class="trust-ic">${icon(ic)}</span><span class="trust-txt"><b>${esc(title)}</b><small>${esc(sub)}</small></span></div>`;
 }
 
+/* Formular „Solicitar presupuesto" → POST /api/leads (gestionat de site.js).
+   Reutilizabil pe ficha (businessId setat) și pe paginile de listare
+   (context = serviciu/zonă). Are honeypot (câmpul .lead-hp) anti-boți. */
+function leadForm(opts) {
+  opts = opts || {};
+  const title = opts.title || 'Solicita presupuesto gratis';
+  const sub = opts.sub || 'Cuéntanos qué necesitas y te ponemos en contacto con un profesional de la zona.';
+  return `<section class="lead-cta${opts.compact ? ' lead-cta-compact' : ''}">
+      <div class="lead-cta-head">
+        <span class="lead-cta-ic">${icon('doc')}</span>
+        <div><h2>${esc(title)}</h2><p>${esc(sub)}</p></div>
+      </div>
+      <form class="lead-form" data-lead-form novalidate>
+        ${opts.businessId ? `<input type="hidden" name="businessId" value="${attr(opts.businessId)}">` : ''}
+        <input type="hidden" name="context" value="${attr(opts.context || '')}">
+        <div class="lead-hp" aria-hidden="true"><label>No rellenar<input type="text" name="hp" tabindex="-1" autocomplete="off"></label></div>
+        <div class="lead-row">
+          <label class="lead-field"><span>Nombre*</span><input name="name" type="text" required autocomplete="name" placeholder="Tu nombre"></label>
+          <label class="lead-field"><span>Teléfono</span><input name="phone" type="tel" autocomplete="tel" placeholder="600 000 000"></label>
+          <label class="lead-field"><span>Email</span><input name="email" type="email" autocomplete="email" placeholder="tu@email.com"></label>
+        </div>
+        <label class="lead-field lead-field-full"><span>¿Qué necesitas?</span><textarea name="message" rows="3" placeholder="Describe brevemente el trabajo…"></textarea></label>
+        <div class="lead-actions">
+          <button type="submit" class="btn btn-primary">Solicitar presupuesto</button>
+          <span class="lead-hint">Indica teléfono o email · Gratis y sin compromiso</span>
+        </div>
+        <p class="lead-note">Al enviar aceptas la <a href="/privacidad">política de privacidad</a>.</p>
+        <div class="lead-feedback" role="status" aria-live="polite" hidden></div>
+      </form>
+    </section>`;
+}
+
 function businessCard(ctx, b) {
   const tags = (b.categories || []).slice(0, 3).map(c => `<span class="tag">${esc(c.name)}</span>`).join('');
   const more = (b.categories || []).length > 3 ? `<span class="tag tag-more">+${b.categories.length - 3}</span>` : '';
@@ -248,6 +280,19 @@ function renderFooter(ctx) {
   </footer>`;
 }
 
+/* Analytics (Plausible o GA4) — se cargan SOLO tras el consentimiento del banner
+   de cookies (RGPD). Se activan por variables de entorno; sin ellas, no se emite
+   ningún script (el banner sigue siendo honesto: solo promete lo que existe). */
+function analyticsSnippet() {
+  const plausible = process.env.PLAUSIBLE_DOMAIN || '';
+  const ga4 = process.env.GA4_ID || '';
+  if (!plausible && !ga4) return '';
+  const loader = plausible
+    ? `var s=document.createElement('script');s.defer=true;s.setAttribute('data-domain',${JSON.stringify(plausible)});s.src='https://plausible.io/js/script.js';document.head.appendChild(s);`
+    : `var s=document.createElement('script');s.async=true;s.src='https://www.googletagmanager.com/gtag/js?id='+${JSON.stringify(ga4)};document.head.appendChild(s);window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config',${JSON.stringify(ga4)});`;
+  return `<script>(function(){window.__loadAnalytics=function(){if(window.__anaLoaded)return;window.__anaLoaded=true;${loader}};try{if(localStorage.getItem('rm_cookie_consent')==='accept')window.__loadAnalytics();}catch(e){}})();</script>`;
+}
+
 /* Banner de consentimiento de cookies (RGPD). Privacy-first: solo se guarda
    la decisión del usuario; sin cookies analíticas hasta que las acepte. */
 function cookieBanner() {
@@ -260,13 +305,14 @@ function cookieBanner() {
       </div>
     </div>
   </div>
-  <script>(function(){try{var K='rm_cookie_consent',b=document.getElementById('cookieBanner');if(!b)return;if(!localStorage.getItem(K))b.hidden=false;b.addEventListener('click',function(e){var t=e.target.closest('[data-cookie]');if(!t)return;localStorage.setItem(K,t.getAttribute('data-cookie'));b.hidden=true;});}catch(e){}})();</script>`;
+  <script>(function(){try{var K='rm_cookie_consent',b=document.getElementById('cookieBanner');if(!b)return;if(!localStorage.getItem(K))b.hidden=false;b.addEventListener('click',function(e){var t=e.target.closest('[data-cookie]');if(!t)return;var v=t.getAttribute('data-cookie');localStorage.setItem(K,v);b.hidden=true;if(v==='accept'&&window.__loadAnalytics)window.__loadAnalytics();});}catch(e){}})();</script>`;
 }
 
 /* ------------------------------ Layout ------------------------------- */
 function renderLayout(ctx, page) {
   const canonical = page.canonical || abs(ctx, ctx.path || '/');
   const jsonLd = [].concat(page.jsonLd || []).filter(Boolean);
+  const ogImage = page.ogImage || abs(ctx, '/assets/img/cat-reformas.jpg');  // imagen social por defecto
   return `<!doctype html>
 <html lang="es">
 <head>
@@ -277,15 +323,21 @@ function renderLayout(ctx, page) {
 <link rel="canonical" href="${attr(canonical)}">
 ${page.prev ? `<link rel="prev" href="${attr(page.prev)}">` : ''}
 ${page.next ? `<link rel="next" href="${attr(page.next)}">` : ''}
-<meta name="robots" content="index,follow">
+<meta name="robots" content="${page.robots || 'index,follow'}">
 <meta property="og:type" content="${page.ogType || 'website'}">
 <meta property="og:site_name" content="${attr(SITE.name)}">
 <meta property="og:title" content="${attr(page.title)}">
 <meta property="og:description" content="${attr(page.description || '')}">
 <meta property="og:url" content="${attr(canonical)}">
-${page.ogImage ? `<meta property="og:image" content="${attr(page.ogImage)}">` : ''}
+<meta property="og:image" content="${attr(ogImage)}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="${attr(page.title)}">
+<meta name="twitter:description" content="${attr(page.description || '')}">
+<meta name="twitter:image" content="${attr(ogImage)}">
 <meta name="theme-color" content="#c8102e">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ctext y='20' font-size='20'%3E🛠️%3C/text%3E%3C/svg%3E">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/favicon.svg">
+<link rel="mask-icon" href="/favicon.svg" color="#c8102e">
 <link rel="stylesheet" href="/assets/css/styles.css">
 ${jsonLd.map(j => `<script type="application/ld+json">${JSON.stringify(j)}</script>`).join('\n')}
 </head>
@@ -293,6 +345,7 @@ ${jsonLd.map(j => `<script type="application/ld+json">${JSON.stringify(j)}</scri
 ${renderHeader(ctx)}
 <main id="contenido">${page.body}</main>
 ${renderFooter(ctx)}
+${analyticsSnippet()}
 ${cookieBanner()}
 ${page.inlineData ? `<script>window.__RM__=${JSON.stringify(page.inlineData)};</script>` : ''}
 <script src="/assets/js/ui.js"></script>
@@ -307,6 +360,16 @@ function listingPage(ctx, opts) {
   const businesses = opts.businesses;
   const pg = opts.pagination;
   const total = opts.total != null ? opts.total : businesses.length;
+  const hasBiz = businesses.length > 0;
+  const lcFirst = s => s ? s.charAt(0).toLowerCase() + s.slice(1) : s;  // păstrează majuscula la nume proprii (ex. „en Vicálvaro")
+  const leadBlock = opts.hideLeadForm ? '' : leadForm({
+    context: opts.h1,
+    compact: hasBiz,
+    title: hasBiz ? '¿No encuentras lo que buscas?' : 'Pide presupuesto sin compromiso',
+    sub: hasBiz
+      ? 'Pide presupuesto gratis y te ponemos en contacto con un profesional de la zona.'
+      : `¿Buscas ${lcFirst(opts.h1 || 'un profesional')}? Déjanos tu solicitud y te ponemos en contacto con profesionales de la zona, sin compromiso.`,
+  });
   const body = `
     <div class="container">
       ${breadcrumb(ctx, opts.crumbs)}
@@ -318,6 +381,7 @@ function listingPage(ctx, opts) {
       ${opts.subchips || ''}
       ${grid(ctx, businesses, opts.emptyMsg)}
       ${paginationNav(ctx, pg)}
+      ${leadBlock}
       ${(opts.related || []).join('')}
     </div>`;
   const onPageN = pg && pg.page > 1;
@@ -325,6 +389,9 @@ function listingPage(ctx, opts) {
   return renderLayout(ctx, {
     title: onPageN ? opts.title.replace(' | ', ` — página ${pg.page} | `) : opts.title,
     description: opts.description, canonical,
+    // Anti-thin content: paginile de listare fără niciun negocio → noindex,follow
+    // (Google nu indexează pagini goale; păstrăm crawl-ul link-urilor interne).
+    robots: total < 1 ? 'noindex,follow' : undefined,
     prev: pg && pg.page > 1 ? abs(ctx, pageHref(pg.baseHref, pg.page - 1)) : null,
     next: pg && pg.page < pg.pages ? abs(ctx, pageHref(pg.baseHref, pg.page + 1)) : null,
     jsonLd: [jsonLdBreadcrumb(ctx, opts.crumbs), businesses.length ? jsonLdItemList(ctx, businesses) : null].concat(opts.jsonLd || []),
@@ -622,6 +689,7 @@ function renderBusiness(ctx, b) {
           ${b.metros && b.metros.length ? `<section class="biz-section"><h2>Metro cercano</h2><div class="chips">${metroLinks}</div></section>` : ''}
         </div>
         <aside class="biz-aside">
+          ${leadForm({ businessId: b.id, context: b.name, title: `Pide presupuesto a ${b.name}`, sub: 'Rellena el formulario y este profesional te contactará. Gratis y sin compromiso.' })}
           <section class="biz-card">
             <h2>Horario</h2>
             <table class="hours">${DAYS.map(([k, lbl]) => `<tr><th>${lbl}</th><td>${esc((b.hours && b.hours[k]) || 'Cerrado')}</td></tr>`).join('')}</table>
@@ -759,6 +827,7 @@ function renderSearch(ctx, q, page) {
     title: query ? `“${query}”${p > 1 ? ` — página ${p}` : ''} | ${SITE.name}` : `Buscar | ${SITE.name}`,
     description: `Busca profesionales de reformas y servicios para el hogar en Madrid.`,
     canonical: abs(ctx, '/buscar'),
+    robots: 'noindex,follow',   // páginas de resultados de búsqueda interna: no indexar
     prev: pg && p > 1 ? abs(ctx, pageHref(baseHref, p - 1)) : null,
     next: pg && p < pages ? abs(ctx, pageHref(baseHref, p + 1)) : null,
     body,
@@ -879,34 +948,76 @@ function render404(ctx, message) {
   return renderLayout(ctx, { title: `Página no encontrada | ${SITE.name}`, description: '', canonical: abs(ctx, ctx.path || '/'), body });
 }
 
+function render500(ctx) {
+  const body = `<div class="container"><div class="empty empty-404">
+      <h1>Algo ha ido mal</h1>
+      <p>Ha ocurrido un error en el servidor. Vuelve a intentarlo en unos instantes.</p>
+      <p><a class="btn btn-primary" href="/">Volver al inicio</a></p>
+    </div></div>`;
+  return renderLayout(ctx, { title: `Error del servidor | ${SITE.name}`, description: '', canonical: abs(ctx, ctx.path || '/'), robots: 'noindex,follow', body });
+}
+
 /* ---------------------------- Sitemap / robots ----------------------- */
+/* Cache simplu (per origin, TTL 10 min): sitemap-ul e costisitor (N+1). */
+const _sitemapCache = new Map();
+const SITEMAP_TTL = 10 * 60 * 1000;
+
 function renderSitemap(ctx) {
-  const urls = ['/'];
-  urls.push('/zonas', '/metro', '/buscar');
-  urls.push('/aviso-legal', '/privacidad', '/cookies', '/condiciones');
-  urls.push('/destacadas');
+  const origin = (ctx && ctx.origin) || '';
+  const hit = _sitemapCache.get(origin);
+  if (hit && Date.now() - hit.at < SITEMAP_TTL) return hit.xml;
+
   const cats = DB.getCategoryTree();
   const districts = DB.listDistricts();
   const metros = DB.listMetros();
   const zones = DB.listZones();
-  districts.forEach(d => urls.push(`/zona/${d.slug}`));
-  cats.forEach(c => {
-    urls.push(`/${c.slug}`);
-    c.children.forEach(s => urls.push(`/${s.slug}`));
-    zones.forEach(z => urls.push(`/${c.slug}/zona/${z.slug}`));
-    districts.forEach(d => {
-      urls.push(`/${c.slug}/${d.slug}`);
-      DB.listNeighborhoods(d.id).forEach(b => urls.push(`/${c.slug}/${d.slug}/${b.slug}`));
+  const businesses = DB.listBusinesses();
+
+  /* O singură trecere peste negocios → ce combinații au conținut real.
+     Includem în sitemap DOAR paginile cu ≥1 negocio (restul sunt noindex, ca să
+     nu irosim crawl budget pe cele ~10.000 de pagini goale). */
+  const cov = { cat: new Set(), catMun: new Set(), catBar: new Set(), catZona: new Set(), catMetro: new Set(), muni: new Set() };
+  businesses.forEach(b => {
+    const cslugs = new Set();
+    (b.categories || []).forEach(c => { cslugs.add(c.slug); if (c.parent_id) { const p = DB.getCategory(c.parent_id); if (p) cslugs.add(p.slug); } });
+    const d = b.district && b.district.slug;
+    const zona = b.district && b.district.zona;
+    const bar = b.neighborhood && b.neighborhood.slug;
+    if (d) cov.muni.add(d);
+    cslugs.forEach(cs => {
+      cov.cat.add(cs);
+      if (d) cov.catMun.add(cs + '|' + d);
+      if (d && bar) cov.catBar.add(cs + '|' + d + '|' + bar);
+      if (zona) cov.catZona.add(cs + '|' + zona);
+      (b.metros || []).forEach(m => cov.catMetro.add(cs + '|' + m.slug));
     });
-    metros.forEach(m => urls.push(`/${c.slug}/metro/${m.slug}`));
   });
-  metros.forEach(m => urls.push(`/metro/${m.slug}`));
-  DB.listBusinesses().forEach(b => urls.push(`/negocio/${b.id}`));
-  const body = `<?xml version="1.0" encoding="UTF-8"?>
+
+  const entries = [];
+  const add = (loc, lastmod) => entries.push({ loc, lastmod });
+  add('/');
+  add('/zonas'); add('/metro'); add('/destacadas');
+  add('/aviso-legal'); add('/privacidad'); add('/cookies'); add('/condiciones');
+  districts.forEach(d => { if (cov.muni.has(d.slug)) add(`/zona/${d.slug}`); });
+  cats.forEach(c => {
+    if (cov.cat.has(c.slug)) add(`/${c.slug}`);
+    c.children.forEach(s => { if (cov.cat.has(s.slug)) add(`/${s.slug}`); });
+    zones.forEach(z => { if (cov.catZona.has(c.slug + '|' + z.slug)) add(`/${c.slug}/zona/${z.slug}`); });
+    districts.forEach(d => {
+      if (cov.catMun.has(c.slug + '|' + d.slug)) add(`/${c.slug}/${d.slug}`);
+      DB.listNeighborhoods(d.id).forEach(b => { if (cov.catBar.has(c.slug + '|' + d.slug + '|' + b.slug)) add(`/${c.slug}/${d.slug}/${b.slug}`); });
+    });
+    metros.forEach(m => { if (cov.catMetro.has(c.slug + '|' + m.slug)) add(`/${c.slug}/metro/${m.slug}`); });
+  });
+  metros.forEach(m => add(`/metro/${m.slug}`));
+  businesses.forEach(b => add(`/negocio/${b.id}`, b.created_at ? new Date(b.created_at * 1000).toISOString().slice(0, 10) : null));
+
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${urls.map(u => `  <url><loc>${esc(abs(ctx, u))}</loc></url>`).join('\n')}
+${entries.map(e => `  <url><loc>${esc(abs(ctx, e.loc))}</loc>${e.lastmod ? `<lastmod>${e.lastmod}</lastmod>` : ''}</url>`).join('\n')}
 </urlset>`;
-  return body;
+  _sitemapCache.set(origin, { xml, at: Date.now() });
+  return xml;
 }
 function renderRobots(ctx) {
   return `User-agent: *
@@ -923,5 +1034,5 @@ module.exports = {
   SITE,
   renderHome, renderCategory, renderCategoryZona, renderDistrict, renderBarrio, renderCategoryMetro,
   renderZoneDistrict, renderZoneBarrio, renderZonesIndex, renderMetroIndex, renderMetroHub,
-  renderBusiness, renderDestacadas, renderSearch, renderLegal, render404, renderSitemap, renderRobots,
+  renderBusiness, renderDestacadas, renderSearch, renderLegal, render404, render500, renderSitemap, renderRobots,
 };

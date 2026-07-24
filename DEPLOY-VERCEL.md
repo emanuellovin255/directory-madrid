@@ -78,6 +78,16 @@ Pe **vercel.com → proiectul tău → Settings → Environment Variables**, ada
 
 > `API_TOKEN` e legătura CRM → Directory. Trebuie identic în ambele locuri, altfel
 > push-ul din CRM primește 401.
+>
+> **Securitate (important):**
+> - `ADMIN_PASSWORD` și `SESSION_SECRET` sunt **obligatorii** în producție. Dacă
+>   oricare rămâne pe valoarea implicită, panoul de administrare se **blochează
+>   automat** (login și scrieri → 503), dar site-ul public și captarea de leaduri
+>   rămân funcționale. Configurează-le și fă Redeploy.
+> - `API_TOKEN` are **drepturi minime**: permite DOAR `POST /api/businesses`
+>   (adăugare de negocios din CRM). NU poate exporta datele, nu poate face import
+>   (replace-all), reset-demo, citi leaduri sau modifica clasamentele — acelea cer
+>   sesiune de admin. Un token scurs nu poate compromite directorul.
 
 După ce le adaugi: **Deployments → ultimul deploy → Redeploy** (ca să prindă
 variabilele). Sau, la CLI: `vercel --prod`.

@@ -117,6 +117,20 @@ db.exec(`
     ref  TEXT,                -- business id (pentru 'view')
     ts   INTEGER NOT NULL     -- unix seconds
   );
+  CREATE TABLE IF NOT EXISTS leads (
+    id          TEXT PRIMARY KEY,
+    business_id TEXT,               -- negocio la care se cere presupuesto (nullable); FĂRĂ FK: lead-ul supraviețuiește ștergerii firmei
+    name        TEXT NOT NULL,
+    phone       TEXT,
+    email       TEXT,
+    message     TEXT,
+    context     TEXT,               -- eticheta paginii (ex. "Fontaneros · Salamanca")
+    source_url  TEXT,               -- URL-ul de unde s-a trimis
+    status      TEXT NOT NULL DEFAULT 'new',  -- new | contacted | archived
+    created_at  INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status, created_at);
+  CREATE INDEX IF NOT EXISTS idx_leads_business ON leads(business_id);
   CREATE INDEX IF NOT EXISTS idx_bc_category ON business_categories(category_id);
   CREATE INDEX IF NOT EXISTS idx_bm_metro    ON business_metros(metro_id);
   CREATE INDEX IF NOT EXISTS idx_biz_district ON businesses(district_id);
@@ -350,6 +364,7 @@ function parseBusinessRow(r) {
     featured: !!r.featured, photo: r.photo || null,
     logo: r.logo || null, photos: safeParse(r.photos, []),
     district_id: r.district_id || null, neighborhood_id: r.neighborhood_id || null,
+    created_at: r.created_at != null ? r.created_at : null,
   };
 }
 function attachRelations(b) {
@@ -594,6 +609,87 @@ function getStats() {
   };
 }
 
+/* ------------------------------- Leads -------------------------------- */
+/* Cererile de presupuesto trimise de vizitatori — inima de business a
+   directorului. Model IMPORTANT: pe producție (Supabase) lead-urile sunt
+   append-only DIRECT în Postgres (vezi pgstore.insertLead/listLeads), NU trec
+   prin snapshot-ul complet care se rescrie la fiecare salvare de admin — altfel
+   o cursă între două instanțe serverless ar putea suprascrie un lead nou.
+   Local (fără Postgres) trăiesc în SQLite. Toate funcțiile sunt async ca
+   serverul să folosească un singur cod indiferent de backend. */
+const LEAD_STATUSES = ['new', 'contacted', 'archived'];
+function newLeadId() { return now().toString(36) + '-' + Math.random().toString(36).slice(2, 8); }
+function normalizeLead(data) {
+  data = data || {};
+  const cut = (v, n) => String(v == null ? '' : v).trim().slice(0, n);
+  return {
+    business_id: data.businessId || data.business_id ? String(data.businessId || data.business_id).slice(0, 80) : null,
+    name: cut(data.name, 120),
+    phone: cut(data.phone, 40),
+    email: cut(data.email, 160),
+    message: cut(data.message, 2000),
+    context: cut(data.context, 200),
+    source_url: cut(data.sourceUrl || data.source_url, 400),
+  };
+}
+function parseLeadRow(r) {
+  if (!r) return null;
+  const bizName = r.business_name != null ? r.business_name
+    : (r.business_id ? (db.prepare('SELECT name FROM businesses WHERE id=?').get(r.business_id) || {}).name : null);
+  return {
+    id: r.id, business_id: r.business_id || null, businessName: bizName || null,
+    name: r.name, phone: r.phone || '', email: r.email || '', message: r.message || '',
+    context: r.context || '', source_url: r.source_url || '',
+    status: r.status || 'new', created_at: Number(r.created_at) || 0,
+  };
+}
+const _insLeadLocal = db.prepare(`INSERT INTO leads (id,business_id,name,phone,email,message,context,source_url,status,created_at)
+  VALUES (?,?,?,?,?,?,?,?,?,?)`);
+function getLeadLocal(id) { return parseLeadRow(db.prepare('SELECT * FROM leads WHERE id=?').get(String(id))); }
+function listLeadsLocal(filter) {
+  filter = filter || {};
+  const where = [], params = [];
+  if (filter.status && LEAD_STATUSES.includes(filter.status)) { where.push('status=?'); params.push(filter.status); }
+  const sql = `SELECT * FROM leads ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY created_at DESC, id DESC`;
+  return db.prepare(sql).all(...params).map(parseLeadRow);
+}
+
+/* Creează un lead. Returnează obiectul salvat. */
+async function createLead(data) {
+  const L = normalizeLead(data);
+  const row = { id: newLeadId(), business_id: L.business_id, name: L.name, phone: L.phone,
+    email: L.email, message: L.message, context: L.context, source_url: L.source_url,
+    status: 'new', created_at: now() };
+  if (pgstore.isEnabled()) { await pgstore.insertLead(row); return parseLeadRow(row); }
+  _insLeadLocal.run(row.id, row.business_id, row.name, row.phone, row.email, row.message, row.context, row.source_url, row.status, row.created_at);
+  return getLeadLocal(row.id);
+}
+async function getLeads(filter) {
+  filter = filter || {};
+  if (filter.status && !LEAD_STATUSES.includes(filter.status)) filter = Object.assign({}, filter, { status: null });
+  if (pgstore.isEnabled()) return (await pgstore.listLeads(filter)).map(parseLeadRow);
+  return listLeadsLocal(filter);
+}
+/* Contoare per status pentru badge-ul din admin: { new, contacted, archived, total }. */
+async function getLeadCounts() {
+  let rows;
+  if (pgstore.isEnabled()) rows = await pgstore.countLeadsByStatus();
+  else rows = db.prepare('SELECT status, COUNT(*) c FROM leads GROUP BY status').all();
+  const out = { new: 0, contacted: 0, archived: 0, total: 0 };
+  (rows || []).forEach(r => { const c = Number(r.c) || 0; if (out[r.status] != null) out[r.status] = c; out.total += c; });
+  return out;
+}
+async function setLeadStatus(id, status) {
+  if (!LEAD_STATUSES.includes(String(status))) return null;
+  if (pgstore.isEnabled()) { const r = await pgstore.updateLeadStatus(String(id), String(status)); return r ? parseLeadRow(r) : null; }
+  const info = db.prepare('UPDATE leads SET status=? WHERE id=?').run(String(status), String(id));
+  return info.changes ? getLeadLocal(id) : null;
+}
+async function deleteLead(id) {
+  if (pgstore.isEnabled()) return pgstore.deleteLead(String(id));
+  return db.prepare('DELETE FROM leads WHERE id=?').run(String(id)).changes > 0;
+}
+
 /* ----------------------- Persistență Supabase ------------------------- */
 /* Se apelează O DATĂ la boot, ÎNAINTE de a servi cereri: pornește pool-ul
    Postgres, creează schema și încarcă datele în SQLite-ul in-memory.
@@ -628,4 +724,6 @@ module.exports = {
   getPlacements, setPlacements, clearPlacements, countPlacement, orderByContext, listForContext, listHome,
   // events / stats
   recordEvent, countEvents, clearEvents, getStats, getMonthlySeries,
+  // leads
+  createLead, getLeads, getLeadCounts, setLeadStatus, deleteLead, LEAD_STATUSES,
 };
