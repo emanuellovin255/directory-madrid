@@ -877,7 +877,9 @@
     bindBusinesses(); bindDrawer(); bindStats(); bindImport(); bindTaxonomy(); bindOrden(); bindLeads();
     $$('.admin-nav-btn').forEach(b => b.addEventListener('click', () => switchView(b.dataset.view)));
     $$('[data-goview]').forEach(el => el.addEventListener('click', e => { e.preventDefault(); switchView(el.dataset.goview); }));
-    $('#logoutBtn').addEventListener('click', async e => { e.preventDefault(); try { await api.logout(); } catch {} location.replace('login.html'); });
+    // Local, fără login (me.noLogin) → ascundem „salir": nu are unde să te ducă.
+    if (me.noLogin) $('#logoutBtn').classList.add('hidden');
+    else $('#logoutBtn').addEventListener('click', async e => { e.preventDefault(); try { await api.logout(); } catch {} location.replace('login.html'); });
     $('#adminApp').classList.remove('hidden');
     renderBusinesses();
     refreshLeadBadge();

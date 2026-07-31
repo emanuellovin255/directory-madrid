@@ -47,6 +47,13 @@ if (INSECURE_PROD) {
   console.error('   El panel de administración queda BLOQUEADO hasta configurarlos (ver DEPLOY-VERCEL.md).');
 }
 
+/* Local (fără Vercel/Postgres) = aplicație single-user pe calculatorul propriu →
+   FĂRĂ login deloc: adminul e mereu deschis, pagina de login nu se mai arată
+   (deci nici browserul nu mai propune „conectare cu Google"/manager de parole).
+   În producție autentificarea rămâne exact ca înainte.
+   Se poate reactiva punând ADMIN_LOGIN=1 în .env. */
+const LOCAL_OPEN_ADMIN = !IS_PROD && process.env.ADMIN_LOGIN !== '1';
+
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, '..', 'uploads');
 
@@ -128,6 +135,12 @@ app.use((req, res, next) => {
 /* Așteaptă bootstrap-ul (hidratare Postgres + seed) înainte de orice cerere. */
 app.use((req, res, next) => { ready.then(() => next()).catch(next); });
 
+/* Local, fără login: pagina de login nu se mai încarcă niciodată (nici măcar
+   pentru o clipă) → browserul nu mai are unde să propună „Google"/parole. */
+if (LOCAL_OPEN_ADMIN) {
+  app.get(['/login', '/login.html'], (req, res) => res.redirect(302, '/admin.html'));
+}
+
 /* Fișiere statice (index:false → „/" e servit de SSR, nu de index.html). */
 if (!SERVERLESS) app.use('/uploads', express.static(UPLOADS_DIR, { maxAge: '7d' }));
 /* `no-cache` = revalidare mereu prin ETag (răspuns 304 dacă n-a schimbat).
@@ -148,6 +161,7 @@ function safeEqual(a, b) {
    rutele sensibile: export, import (replace-all), reset-demo, placements,
    upload, extract, stats și inbox-ul de leaduri. Un token scurs NU le atinge. */
 function requireAuth(req, res, next) {
+  if (LOCAL_OPEN_ADMIN) return next();
   // Producție nesigură (secret/parolă pe default) → refuzăm orice scriere,
   // chiar și cu un cookie de sesiune forjat, până la configurarea secretelor.
   if (INSECURE_PROD) return res.status(503).json({ error: 'Administración deshabilitada: configura ADMIN_PASSWORD y SESSION_SECRET en el servidor.' });
@@ -158,6 +172,7 @@ function requireAuth(req, res, next) {
    Tokenul (API_TOKEN, secret separat) e acceptat mereu; calea de sesiune rămâne
    blocată în producție nesigură (cookie forjabil). */
 function requireAuthOrToken(req, res, next) {
+  if (LOCAL_OPEN_ADMIN) return next();
   const token = req.get('x-api-token');
   if (API_TOKEN && token && safeEqual(token, API_TOKEN)) return next();
   if (INSECURE_PROD) return res.status(503).json({ error: 'Administración deshabilitada: configura ADMIN_PASSWORD y SESSION_SECRET en el servidor.' });
@@ -213,6 +228,7 @@ const slimBiz = b => ({ id: b.id, name: b.name, zone: b.zone || '', featured: !!
 /* =============================== API =================================== */
 /* ------------------------------- Auth --------------------------------- */
 app.post('/api/auth/login', (req, res) => {
+  if (LOCAL_OPEN_ADMIN) return ok(res, { user: ADMIN_USERNAME });
   if (INSECURE_PROD) return res.status(503).json({ error: 'Administración deshabilitada: configura ADMIN_PASSWORD y SESSION_SECRET.' });
   if (!loginLimiter(req.ip || 'unknown')) return res.status(429).json({ error: 'Demasiados intentos. Espera unos minutos e inténtalo de nuevo.' });
   const { username, password } = req.body || {};
@@ -222,7 +238,11 @@ app.post('/api/auth/login', (req, res) => {
   ok(res, { user: ADMIN_USERNAME });
 });
 app.post('/api/auth/logout', (req, res) => { req.session = null; ok(res, { ok: true }); });
-app.get('/api/auth/me', (req, res) => ok(res, { user: (req.session && req.session.user) || null }));
+app.get('/api/auth/me', (req, res) => {
+  // Local: mereu autentificat → adminul nu mai trece niciodată prin login.
+  if (LOCAL_OPEN_ADMIN) return ok(res, { user: ADMIN_USERNAME, noLogin: true });
+  ok(res, { user: (req.session && req.session.user) || null });
+});
 
 /* ---------------------------- Businesses ------------------------------ */
 /* Paginat: NICIODATĂ nu returnăm toate cele (posibil) 100k negocios într-un
@@ -542,9 +562,9 @@ if (!SERVERLESS && require.main === module) {
       const usingDefaults = ADMIN_PASSWORD === 'admin' || SESSION_SECRET === 'dev-insecure-secret-change-me';
       console.log(`\n  ${R.SITE.name}`);
       console.log(`  ▶  http://localhost:${PORT}`);
-      console.log(`  ▶  Admin: http://localhost:${PORT}/admin.html  (usuario: ${ADMIN_USERNAME})`);
+      console.log(`  ▶  Admin: http://localhost:${PORT}/admin.html${LOCAL_OPEN_ADMIN ? '  (sin login — uso local)' : `  (usuario: ${ADMIN_USERNAME})`}`);
       console.log(`  ▶  Persistencia: ${DB.persistenceEnabled() ? 'Supabase Postgres' : (process.env.VERCEL ? 'memoria (efímera)' : 'SQLite en disco')}`);
-      if (usingDefaults) console.log(`  ⚠️  Usando credenciales/secreto por defecto — crea un archivo .env (ver .env.example).`);
+      if (usingDefaults && !LOCAL_OPEN_ADMIN) console.log(`  ⚠️  Usando credenciales/secreto por defecto — crea un archivo .env (ver .env.example).`);
       console.log('');
     });
   });
