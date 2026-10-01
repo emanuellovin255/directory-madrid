@@ -61,6 +61,9 @@ CREATE TABLE IF NOT EXISTS businesses (
   photo           TEXT,
   logo            TEXT,
   photos          TEXT,          -- JSON array de URL-uri (galerie de servicii)
+  area            TEXT,          -- zona/urbanización tal cual (ej. «El Montecillo»)
+  contact_name    TEXT,          -- persona de contacto / responsable (opcional)
+  team_size       INTEGER,       -- nº de miembros del equipo (opcional)
   created_at      BIGINT
 );
 

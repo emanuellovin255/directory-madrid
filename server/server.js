@@ -223,7 +223,13 @@ function parseContext(raw) {
   return { valid: true, kind, context, filter };
 }
 /* Proiecție „slabă" pentru board (fără galerii mari): doar ce afișează un slot. */
-const slimBiz = b => ({ id: b.id, name: b.name, zone: b.zone || '', featured: !!b.featured, cover: b.logo || (b.photos && b.photos[0]) || b.photo || null });
+const slimBiz = b => ({ id: b.id, name: b.name, zone: b.zone || '', featured: !!b.featured, reviews: b.reviews || 0, cover: b.logo || (b.photos && b.photos[0]) || b.photo || null });
+/* Marchează pentru admin dacă negocio-ul e în portada (și pe ce poziție). */
+function withHome(list) {
+  const pos = DB.homePositions();
+  list.forEach(b => { b.homePos = pos.get(b.id) || null; });
+  return list;
+}
 
 /* =============================== API =================================== */
 /* ------------------------------- Auth --------------------------------- */
@@ -256,12 +262,12 @@ app.get('/api/businesses', (req, res) => {
   const pageSize = Math.min(200, Math.max(1, parseInt(req.query.pageSize, 10) || 50));
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const page = Math.min(Math.max(1, parseInt(req.query.page, 10) || 1), pages);
-  const businesses = DB.listBusinessesPageRows(filter, (page - 1) * pageSize, pageSize);
+  const businesses = withHome(DB.listBusinessesPageRows(filter, (page - 1) * pageSize, pageSize));
   ok(res, { businesses, total, page, pages, pageSize });
 });
 app.get('/api/businesses/:id', (req, res) => {
   const b = DB.getBusiness(req.params.id);
-  return b ? ok(res, b) : res.status(404).json({ error: 'No encontrada' });
+  return b ? ok(res, withHome([b])[0]) : res.status(404).json({ error: 'No encontrada' });
 });
 /* Singura rută cu bypass pe token: push de negocios din CRM „100k MRR".
    Persistă DOAR negocio-ul creat → un import 1-câte-1 e O(n), nu O(n²). */
@@ -283,6 +289,14 @@ app.post('/api/businesses/:id/featured', requireAuth, async (req, res) => {
   if (!b) return res.status(404).json({ error: 'No encontrada' });
   const updated = DB.setFeatured(req.params.id, req.body && req.body.featured != null ? req.body.featured : !b.featured);
   return respondAfter(res, DB.persistBusiness(req.params.id), updated);
+});
+/* Portada: { on: true } → se añade al FINAL de «Empresas destacadas»; { on: false } → se quita. */
+app.post('/api/businesses/:id/home', requireAuth, async (req, res) => {
+  const b = DB.getBusiness(req.params.id);
+  if (!b) return res.status(404).json({ error: 'No encontrada' });
+  const on = !!(req.body && req.body.on);
+  DB.setHomeMembership(b.id, on);
+  return respondAfter(res, DB.persistPlacements('home'), { id: b.id, homePos: DB.homePositions().get(b.id) || null, count: DB.countPlacement('home') });
 });
 app.post('/api/businesses/reset-demo', requireAuth, async (req, res) => {
   return saveAndRespond(res, { businesses: DB.replaceAll(DEMO_BUSINESSES) });
@@ -439,8 +453,12 @@ app.get('/api/placements/:context', requireAuth, (req, res) => {
   if (pc.kind === 'home') items = DB.getPlacements('home').map(p => DB.getBusiness(p.business_id)).filter(Boolean);
   else items = DB.orderByContext(DB.listBusinesses(pc.filter), pc.context);
   const inSet = new Set(items.map(b => b.id));
-  // Pentru „home", pool-ul de adăugat = toate negocios care nu-s deja în listă.
-  const available = pc.kind === 'home' ? DB.listBusinesses({}).filter(b => !inSet.has(b.id)) : [];
+  // Pentru „home", pool-ul de adăugat = căutare pe server (?q=), cele mai recenzate
+  // întâi, max ~60 — NU toate cele (posibil) zeci de mii de negocios.
+  const q = String(req.query.q || '').trim();
+  const available = pc.kind === 'home'
+    ? DB.listBusinessesPageRows({ q: q || undefined, sort: 'reviews' }, 0, 60 + inSet.size).filter(b => !inSet.has(b.id)).slice(0, 60)
+    : [];
   ok(res, { context: pc.context, kind: pc.kind, pageSize: 20, items: items.map(slimBiz), available: available.map(slimBiz) });
 });
 app.put('/api/placements/:context', requireAuth, async (req, res) => {

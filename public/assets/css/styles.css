@@ -227,6 +227,8 @@ p { margin: 0; }
 .card-title { font-size: 15.5px; font-weight: 750; letter-spacing: -.01em; }
 .card-zone { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 12.5px; font-weight: 600; }
 .card-zone svg { color: var(--accent); flex: none; }
+.card-reviews { display: inline-flex; align-items: center; gap: 5px; color: var(--ink-2); font-size: 12.5px; font-weight: 600; }
+.card-reviews svg { color: var(--gold); flex: none; }
 .card-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
 .tag {
   background: var(--surface-2); border: 1px solid var(--line-2);
@@ -429,6 +431,9 @@ p { margin: 0; }
 .icon-btn:hover { background: var(--surface-2); border-color: var(--muted-2); }
 .icon-btn.danger:hover { background: var(--danger-050); color: var(--danger); border-color: #fecaca; }
 .icon-btn.gold.on { background: #fffbeb; color: var(--gold); border-color: #fde68a; }
+.icon-btn.home.on { background: var(--accent-050); color: var(--accent-700); border-color: var(--accent-100); }
+.pill-home { background: var(--accent-050); color: var(--accent-700); border: 1px solid var(--accent-100); }
+.t-pills { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; white-space: nowrap; }
 
 /* Forms */
 .form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px 18px; }
@@ -701,6 +706,9 @@ main { display: block; }
 .biz-rating { display: flex; align-items: center; gap: 6px; margin-top: 6px; color: var(--ink-2); font-weight: 600; }
 .biz-rating .ic { color: var(--gold); }
 .biz-rating b { color: var(--ink); }
+.biz-facts { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 10px; color: var(--ink-2); font-weight: 600; font-size: 14.5px; }
+.biz-facts span { display: inline-flex; align-items: center; gap: 6px; }
+.biz-facts .ic { color: var(--accent); }
 .biz-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
 .biz-grid { display: grid; grid-template-columns: 1fr 340px; gap: 26px; align-items: start; padding-bottom: 20px; }
 @media (max-width: 760px) { .biz-grid { grid-template-columns: 1fr; } }

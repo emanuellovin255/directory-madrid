@@ -34,6 +34,8 @@ DDM.api = (function () {
     updateBusiness: (id, b) => req('PUT', '/api/businesses/' + enc(id), b),
     deleteBusiness: id => req('DELETE', '/api/businesses/' + enc(id)),
     setFeatured: (id, val) => req('POST', '/api/businesses/' + enc(id) + '/featured', { featured: val }),
+    // Portada: añadir al final / quitar de «Empresas destacadas».
+    setHome: (id, on) => req('POST', '/api/businesses/' + enc(id) + '/home', { on: !!on }),
     resetDemo: () => req('POST', '/api/businesses/reset-demo'),
     exportData: () => req('GET', '/api/export'),
     importData: businesses => req('POST', '/api/import', { businesses }),
@@ -41,7 +43,7 @@ DDM.api = (function () {
     extractFromUrl: url => req('POST', '/api/extract', { url }),
 
     // Placements / clasament manual (drag & drop)
-    getPlacements: context => req('GET', '/api/placements/' + enc(context)),
+    getPlacements: (context, q) => req('GET', '/api/placements/' + enc(context) + qs({ q })),
     setPlacements: (context, ids) => req('PUT', '/api/placements/' + enc(context), { ids }),
     clearPlacements: context => req('DELETE', '/api/placements/' + enc(context)),
 

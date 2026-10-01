@@ -53,7 +53,7 @@
           <div>
             <h1>Negocios</h1>
             <p id="bizCount">—</p>
-            <p class="admin-subnote">La estrella ★ solo marca «destacado». Para <b>fijar el orden</b> en que aparecen (arrastrar y soltar) o dejarlo aleatorio, ve a <a href="#" data-goview="orden">Orden / Clasamentos →</a></p>
+            <p class="admin-subnote">El botón <b>⌂ Portada</b> añade la empresa a la página principal (al final de la lista). Para <b>ordenarlas</b> (arrastrar y soltar), ve a <a href="#" data-goview="orden">Orden / Clasamentos → Home</a>. La estrella ★ solo marca «destacado».</p>
           </div>
           <div class="admin-actions">
             <button class="btn btn-ghost btn-sm" id="importBtn">Importar JSON</button>
@@ -71,12 +71,13 @@
         </div>
         <div class="panel">
           <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
-            <input class="input" id="bizSearch" type="search" placeholder="Buscar por nombre, dirección…" style="max-width:320px" />
+            <input class="input" id="bizSearch" type="search" placeholder="Buscar por nombre, zona, teléfono…" style="max-width:320px" />
+            <select class="input" id="bizCat" style="max-width:220px"><option value="">Todos los servicios</option></select>
           </div>
           <div style="overflow-x:auto">
             <table class="admin-table">
               <thead>
-                <tr><th>Negocio</th><th>Zona</th><th>Servicios</th><th>Valoración</th><th>Destacado</th><th style="text-align:right">Acciones</th></tr>
+                <tr><th>Negocio</th><th>Zona</th><th>Servicios</th><th>Reseñas</th><th>Portada</th><th style="text-align:right">Acciones</th></tr>
               </thead>
               <tbody id="bizRows"></tbody>
             </table>
@@ -197,9 +198,9 @@
             <p class="ord-hint" id="ord-status">Cargando…</p>
             <div class="ord-board" id="ord-board"></div>
             <div class="ord-add" id="ord-add" style="display:none">
-              <div class="ord-add-head">Añadir empresas a “Empresas destacadas”</div>
+              <div class="ord-add-head">Añadir empresas a “Empresas destacadas” <span class="muted" style="font-weight:500">— se añaden al final; luego arrástralas y pulsa «Guardar orden»</span></div>
               <div class="ord-add-body">
-                <input class="input" id="ord-add-search" placeholder="Buscar empresa por nombre…" />
+                <input class="input" id="ord-add-search" placeholder="Buscar empresa por nombre, zona o teléfono…" />
                 <div class="ord-add-list" id="ord-add-list"></div>
               </div>
             </div>
@@ -257,8 +258,16 @@
 
         <div class="form-grid" style="margin-top:16px">
           <div class="field col-2">
-            <label for="f-name">Nombre <span class="req">*</span></label>
+            <label for="f-name">Nombre de la empresa <span class="req">*</span></label>
             <input class="input" id="f-name" placeholder="Nombre de la empresa…" required />
+          </div>
+          <div class="field">
+            <label for="f-contact">Nombre del responsable <span class="hint">(opcional)</span></label>
+            <input class="input" id="f-contact" placeholder="p. ej. Juan García" />
+          </div>
+          <div class="field">
+            <label for="f-team">Nº de miembros del equipo <span class="hint">(opcional)</span></label>
+            <input class="input" id="f-team" type="number" min="1" step="1" placeholder="p. ej. 5" />
           </div>
 
           <div class="field">
@@ -271,12 +280,17 @@
           </div>
 
           <div class="field col-2">
+            <label for="f-area">Zona / urbanización <span class="hint">(texto libre; se muestra junto al municipio, p. ej. «El Montecillo · Las Rozas»)</span></label>
+            <input class="input" id="f-area" placeholder="p. ej. El Montecillo" />
+          </div>
+
+          <div class="field col-2">
             <label for="f-address">Dirección</label>
             <input class="input" id="f-address" placeholder="Calle…, 28000 Madrid" />
           </div>
           <div class="field col-2">
-            <label for="f-about">Sobre el negocio</label>
-            <textarea class="input textarea" id="f-about" placeholder="Breve descripción…"></textarea>
+            <label for="f-about">Descripción <span class="hint">(se publica en la ficha, sección «Sobre…»)</span></label>
+            <textarea class="input textarea" id="f-about" placeholder="Breve descripción de la empresa y sus servicios…"></textarea>
           </div>
 
           <div class="field col-2">
@@ -312,6 +326,12 @@
             <input class="input" id="f-reviews" type="number" min="0" step="1" placeholder="120" />
           </div>
 
+          <div class="field col-2">
+            <label style="display:flex;align-items:center;gap:9px;cursor:pointer">
+              <input type="checkbox" id="f-home" style="width:18px;height:18px;accent-color:var(--accent)" />
+              Mostrar en la <b>portada</b> (Empresas destacadas de la página principal)
+            </label>
+          </div>
           <div class="field col-2">
             <label style="display:flex;align-items:center;gap:9px;cursor:pointer">
               <input type="checkbox" id="f-featured" style="width:18px;height:18px;accent-color:var(--accent)" />

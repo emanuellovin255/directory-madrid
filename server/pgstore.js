@@ -21,7 +21,7 @@ const TABLES = {
   categories:          ['id', 'slug', 'name', 'parent_id', 'icon', 'intro', 'display_order', 'in_nav'],
   neighborhoods:       ['id', 'slug', 'name', 'district_id'],
   metros:              ['id', 'slug', 'name', 'lines'],
-  businesses:          ['id', 'name', 'address', 'about', 'district_id', 'neighborhood_id', 'phone', 'email', 'website', 'hours', 'social', 'rating', 'reviews', 'featured', 'photo', 'logo', 'photos', 'created_at'],
+  businesses:          ['id', 'name', 'address', 'about', 'district_id', 'neighborhood_id', 'phone', 'email', 'website', 'hours', 'social', 'rating', 'reviews', 'featured', 'photo', 'logo', 'photos', 'area', 'contact_name', 'team_size', 'created_at'],
   business_categories: ['business_id', 'category_id'],
   business_metros:     ['business_id', 'metro_id'],
   placements:          ['context', 'business_id', 'position'],
@@ -48,7 +48,8 @@ CREATE TABLE IF NOT EXISTS businesses (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, address TEXT, about TEXT,
   district_id INTEGER, neighborhood_id INTEGER, phone TEXT, email TEXT, website TEXT,
   hours TEXT, social TEXT, rating DOUBLE PRECISION, reviews INTEGER DEFAULT 0,
-  featured INTEGER DEFAULT 0, photo TEXT, logo TEXT, photos TEXT, created_at BIGINT
+  featured INTEGER DEFAULT 0, photo TEXT, logo TEXT, photos TEXT,
+  area TEXT, contact_name TEXT, team_size INTEGER, created_at BIGINT
 );
 CREATE TABLE IF NOT EXISTS business_categories (
   business_id TEXT NOT NULL, category_id INTEGER NOT NULL, PRIMARY KEY (business_id, category_id)
@@ -73,6 +74,9 @@ CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status, created_at DESC);
 const ALTERS = [
   `ALTER TABLE businesses ADD COLUMN IF NOT EXISTS logo TEXT`,
   `ALTER TABLE businesses ADD COLUMN IF NOT EXISTS photos TEXT`,
+  `ALTER TABLE businesses ADD COLUMN IF NOT EXISTS area TEXT`,
+  `ALTER TABLE businesses ADD COLUMN IF NOT EXISTS contact_name TEXT`,
+  `ALTER TABLE businesses ADD COLUMN IF NOT EXISTS team_size INTEGER`,
 ];
 
 let pool = null;

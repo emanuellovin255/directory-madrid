@@ -65,38 +65,45 @@
   /* Paginat pe server (poate fi vorba de 100k negocios) → cerem o pagină pe rând,
      cu căutare server-side. `cache` ține DOAR pagina curentă (suficient pentru
      editar/eliminar/destacar, care acționează pe rândurile vizibile). */
-  let bizPage = 1, bizQuery = '';
+  let bizPage = 1, bizQuery = '', bizCat = '';
   async function renderBusinesses() {
     let resp;
-    try { resp = await api.listBusinessesPage({ page: bizPage, pageSize: 50, q: bizQuery || undefined }); }
+    try { resp = await api.listBusinessesPage({ page: bizPage, pageSize: 50, q: bizQuery || undefined, category: bizCat || undefined }); }
     catch (e) { toast('No se pudieron cargar los negocios', 'err'); return; }
     const list = resp.businesses || [];
     bizPage = resp.page || 1;
     cache = list;
-    const totalTxt = `${resp.total} ${resp.total === 1 ? 'negocio' : 'negocios'}${bizQuery ? ' (filtrado)' : ' en el directorio'}`;
+    const totalTxt = `${fmt(resp.total)} ${resp.total === 1 ? 'negocio' : 'negocios'}${bizQuery || bizCat ? ' (filtrado)' : ' en el directorio'}`;
     $('#bizCount').textContent = resp.pages > 1 ? `${totalTxt} · página ${resp.page} de ${resp.pages}` : totalTxt;
     renderBizPager(resp);
     const rows = $('#bizRows');
     if (!list.length) {
-      rows.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--muted)">${bizQuery ? 'No hay resultados para la búsqueda.' : 'No hay negocios. <a href="#" id="emptyNew">Añade el primero</a>.'}</td></tr>`;
+      rows.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--muted)">${bizQuery || bizCat ? 'No hay resultados para la búsqueda.' : 'No hay negocios. <a href="#" id="emptyNew">Añade el primero</a>.'}</td></tr>`;
       const en = $('#emptyNew'); if (en) en.addEventListener('click', e => { e.preventDefault(); openDrawer(); });
       return;
     }
     rows.innerHTML = list.map(b => `
       <tr>
-        <td><div class="t-clinic"><img src="${attr(bizPhoto(b))}" alt="" /><div><div class="t-name">${esc(b.name)}</div><div class="t-zone">${esc(b.address || '')}</div></div></div></td>
+        <td><div class="t-clinic"><img src="${attr(bizPhoto(b))}" alt="" /><div><div class="t-name">${esc(b.name)}</div><div class="t-zone">${esc(b.phone || b.address || '')}</div></div></div></td>
         <td>${esc(b.zone) || '<span class="muted">—</span>'}</td>
-        <td>${(b.categories || []).length} <span class="muted">serv.</span></td>
-        <td>${b.rating != null ? '★ ' + D.rating1(b.rating) : '<span class="muted">—</span>'}</td>
-        <td>${b.featured ? '<span class="pill pill-gold">★ Sí</span>' : '<span class="pill pill-muted">No</span>'}</td>
+        <td>${esc((b.categories || []).filter(c => !c.parent_id).map(c => c.name).join(', ')) || `${(b.categories || []).length} <span class="muted">serv.</span>`}</td>
+        <td>${bizReviews(b)}</td>
+        <td><div class="t-pills">${b.homePos ? `<span class="pill pill-home" title="Posición en la portada">⌂ Nº ${b.homePos}</span>` : ''}${b.featured ? '<span class="pill pill-gold">★ Destacado</span>' : ''}${!b.homePos && !b.featured ? '<span class="muted">—</span>' : ''}</div></td>
         <td><div class="row-actions">
+          <button class="icon-btn home ${b.homePos ? 'on' : ''}" data-act="home" data-id="${attr(b.id)}" title="${b.homePos ? 'Quitar de la portada' : 'Añadir a la portada (al final)'}">${IC.home}</button>
           <button class="icon-btn gold ${b.featured ? 'on' : ''}" data-act="feature" data-id="${attr(b.id)}" title="Destacar">${IC.star}</button>
           <button class="icon-btn" data-act="edit" data-id="${attr(b.id)}" title="Editar">${IC.edit}</button>
           <button class="icon-btn danger" data-act="delete" data-id="${attr(b.id)}" title="Eliminar">${IC.trash}</button>
         </div></td>
       </tr>`).join('');
   }
-  function bizPhoto(b) { return (b && b.photo) ? b.photo : D.placeholderImage(b ? b.name : ''); }
+  function bizPhoto(b) { return (b && (b.logo || b.photo)) || D.placeholderImage(b ? b.name : ''); }
+  function bizReviews(b) {
+    const parts = [];
+    if (b.rating != null) parts.push('★ ' + D.rating1(b.rating));
+    if (b.reviews) parts.push(fmt(b.reviews) + (b.rating != null ? '' : ' reseñas'));
+    return parts.length ? parts.join(' · ') : '<span class="muted">—</span>';
+  }
   function renderBizPager(resp) {
     const el = $('#bizPager'); if (!el) return;
     if (!resp || resp.pages <= 1) { el.innerHTML = ''; return; }
@@ -116,6 +123,14 @@
       const id = btn.dataset.id, act = btn.dataset.act;
       const b = cache.find(x => x.id === id);
       if (act === 'edit') openDrawer(id);
+      else if (act === 'home') {
+        const on = !(b && b.homePos);
+        try {
+          const r = await api.setHome(id, on);
+          await renderBusinesses();
+          toast(on ? `Añadido a la portada (posición ${r.homePos} de ${r.count})` : 'Quitado de la portada');
+        } catch (err) { toast(err.status === 401 ? 'Sesión expirada' : 'No se pudo actualizar la portada', 'err'); }
+      }
       else if (act === 'feature') { try { await api.setFeatured(id, !(b && b.featured)); renderBusinesses(); } catch { toast('Error', 'err'); } }
       else if (act === 'delete') {
         if (confirm(`¿Eliminar “${b ? b.name : ''}”? Esta acción no se puede deshacer.`)) {
@@ -124,6 +139,7 @@
       }
     });
     $('#newBtn').addEventListener('click', () => openDrawer());
+    $('#bizCat').addEventListener('change', e => { bizCat = e.target.value; bizPage = 1; renderBusinesses(); });
     const searchEl = $('#bizSearch');
     if (searchEl) {
       let t;
@@ -136,7 +152,8 @@
     $('#importBtn').addEventListener('click', () => $('#importInput').click());
     $('#importInput').addEventListener('change', doImport);
     $('#resetBtn').addEventListener('click', async () => {
-      if (confirm('¿Restaurar los negocios de demostración? Se perderán tus cambios actuales.')) {
+      const n = ($('#bizCount').textContent.match(/^[\d.]+/) || [''])[0];
+      if (confirm(`¿Restaurar los negocios de demostración?\n\nSe BORRARÁN todos los negocios actuales${n ? ` (${n})` : ''}, incluidos los importados, y quedarán solo los de demo.`)) {
         try { await api.resetDemo(); await renderBusinesses(); toast('Datos demo restaurados'); }
         catch (e) { toast(e.status === 401 ? 'Sesión expirada' : 'No se pudo restaurar', 'err'); }
       }
@@ -164,8 +181,9 @@
     editingId = id || null;
     const b = id ? cache.find(x => x.id === id) : null;
     $('#drawerTitle').textContent = b ? 'Editar negocio' : 'Nuevo negocio';
-    ['f-name', 'f-address', 'f-about', 'f-phone', 'f-email', 'f-website', 'f-rating', 'f-reviews'].forEach(k => { $('#' + k).value = ''; });
+    ['f-name', 'f-contact', 'f-team', 'f-area', 'f-address', 'f-about', 'f-phone', 'f-email', 'f-website', 'f-rating', 'f-reviews'].forEach(k => { $('#' + k).value = ''; });
     $('#f-featured').checked = false;
+    $('#f-home').checked = !!(b && b.homePos);
     $('#f-district').value = '';
     $$('#f-hours [data-day]').forEach(i => { i.value = ''; });
     $$('#f-social [data-social]').forEach(i => { i.value = ''; });
@@ -177,6 +195,7 @@
 
     if (b) {
       $('#f-name').value = b.name; $('#f-address').value = b.address; $('#f-about').value = b.about;
+      $('#f-contact').value = b.contact_name || ''; $('#f-team').value = b.team_size || ''; $('#f-area').value = b.area || '';
       $('#f-phone').value = b.phone; $('#f-email').value = b.email; $('#f-website').value = b.website;
       $('#f-rating').value = b.rating != null ? b.rating : ''; $('#f-reviews').value = b.reviews || '';
       $('#f-featured').checked = !!b.featured;
@@ -204,6 +223,8 @@
     const rating = parseFloat($('#f-rating').value);
     return {
       name: $('#f-name').value, address: $('#f-address').value, about: $('#f-about').value,
+      contact_name: $('#f-contact').value.trim(), team_size: parseInt($('#f-team').value, 10) || null,
+      area: $('#f-area').value.trim(),
       phone: $('#f-phone').value, email: $('#f-email').value, website: $('#f-website').value,
       rating: isNaN(rating) ? null : Math.min(5, Math.max(0, rating)),
       reviews: parseInt($('#f-reviews').value, 10) || 0,
@@ -219,7 +240,10 @@
     if (!data.name.trim()) { toast('El nombre es obligatorio', 'err'); $('#f-name').focus(); return; }
     $('#drawerSave').disabled = true;
     try {
-      if (editingId) await api.updateBusiness(editingId, data); else await api.createBusiness(data);
+      const saved = editingId ? await api.updateBusiness(editingId, data) : await api.createBusiness(data);
+      const prev = editingId ? cache.find(x => x.id === editingId) : null;
+      const wantHome = $('#f-home').checked;
+      if (saved && saved.id && wantHome !== !!(prev && prev.homePos)) await api.setHome(saved.id, wantHome);
       closeDrawer(); await renderBusinesses();
       toast(editingId ? 'Negocio actualizado' : 'Negocio añadido');
     } catch (e) {
@@ -469,9 +493,14 @@
       </div>`).join('');
   }
 
+  function fillBizCatFilter() {
+    const sel = $('#bizCat'); if (!sel) return;
+    sel.innerHTML = '<option value="">Todos los servicios</option>' + categoriesTree.map(c => `<option value="${attr(c.slug)}">${esc(c.name)}</option>`).join('');
+    sel.value = bizCat;
+  }
   async function refreshTaxonomyEverywhere() {
     await loadTaxonomy();
-    fillDistrictSelects(); buildCategoryChecklist(); buildMetroChecklist(); renderTaxonomy();
+    fillDistrictSelects(); buildCategoryChecklist(); buildMetroChecklist(); renderTaxonomy(); fillBizCatFilter();
   }
 
   /* --- Category modal --- */
@@ -755,13 +784,26 @@
     }
     board.innerHTML = html;
   }
+  /* Pool-ul de adăugat vine de la server (căutare pe nume/zonă/teléfono, cele mai
+     recenzate întâi) — pot fi zeci de mii de negocios, nu le încărcăm pe toate. */
   function ordRenderAdd() {
-    const q = norm($('#ord-add-search').value || '');
-    const list = ordAvailable.filter(b => !q || norm(b.name).includes(q));
+    const inList = new Set(ordItems.map(b => b.id));
+    const list = ordAvailable.filter(b => !inList.has(b.id));
     $('#ord-add-list').innerHTML = list.length
-      ? list.slice(0, 120).map(b => `
-        <div class="ord-add-row"><span class="ord-thumb"><img src="${ordThumb(b)}" alt=""></span><span class="ord-name">${esc(b.name)}</span><button class="btn btn-soft btn-sm" data-add="${attr(b.id)}">Añadir</button></div>`).join('')
-      : '<p class="muted" style="padding:8px 4px">No hay más empresas para añadir.</p>';
+      ? list.map(b => `
+        <div class="ord-add-row"><span class="ord-thumb"><img src="${ordThumb(b)}" alt=""></span><span class="ord-name">${esc(b.name)}<small class="muted" style="display:block;font-weight:500">${esc(b.zone || '')}${b.reviews ? ` · ${fmt(b.reviews)} reseñas` : ''}</small></span><button class="btn btn-soft btn-sm" data-add="${attr(b.id)}">Añadir</button></div>`).join('')
+      : `<p class="muted" style="padding:8px 4px">${$('#ord-add-search').value.trim() ? 'Sin resultados para esa búsqueda.' : 'No hay más empresas para añadir.'}</p>`;
+  }
+  let ordSearchT = null, ordSearchSeq = 0;
+  async function ordSearchAvailable() {
+    if (ordCtx !== 'home') return;
+    const seq = ++ordSearchSeq;
+    try {
+      const d = await api.getPlacements('home', $('#ord-add-search').value.trim());
+      if (seq !== ordSearchSeq) return;   // a sosit un răspuns mai nou
+      ordAvailable = d.available || [];
+      ordRenderAdd();
+    } catch { /* ignoră */ }
   }
   function ordStatusText(kind) {
     if (kind === 'home') return `Empresas destacadas del home — arrastra para ordenar. ${ordItems.length} en la lista · 20 por página.`;
@@ -773,7 +815,7 @@
     if (!ordCtx) { board.innerHTML = ''; add.style.display = 'none'; status.textContent = 'Elige servicio, zona o municipio para ver el clasamento.'; return; }
     status.textContent = 'Cargando…';
     try {
-      const d = await api.getPlacements(ordCtx);
+      const d = await api.getPlacements(ordCtx, ordCtx === 'home' ? ($('#ord-add-search').value.trim() || undefined) : undefined);
       ordItems = d.items || []; ordAvailable = d.available || [];
       status.textContent = ordStatusText(d.kind);
       add.style.display = d.kind === 'home' ? '' : 'none';
@@ -800,13 +842,14 @@
     ['ord-type', 'ord-cat', 'ord-scope', 'ord-zona', 'ord-mun'].forEach(id => $('#' + id).addEventListener('change', () => { ordSyncFields(); ordLoad(); }));
     $('#ord-save').addEventListener('click', ordSave);
     $('#ord-reset').addEventListener('click', ordReset);
-    $('#ord-add-search').addEventListener('input', ordRenderAdd);
+    $('#ord-add-search').addEventListener('input', () => { clearTimeout(ordSearchT); ordSearchT = setTimeout(ordSearchAvailable, 250); });
     $('#ord-add-list').addEventListener('click', e => {
       const btn = e.target.closest('button[data-add]'); if (!btn) return;
       const idx = ordAvailable.findIndex(b => b.id === btn.dataset.add); if (idx < 0) return;
       const [b] = ordAvailable.splice(idx, 1);
-      ordItems.splice(Math.floor(Math.random() * (ordItems.length + 1)), 0, b); // se populează random
+      ordItems.push(b);   // al final: el orden lo decides tú (arrastra y «Guardar orden»)
       ordRenderBoard(); ordRenderAdd();
+      toast(`«${b.name}» añadida al final (nº ${ordItems.length}). Pulsa «Guardar orden».`);
     });
     const board = $('#ord-board');
     board.addEventListener('click', e => {
@@ -872,7 +915,7 @@
 
     buildHoursEditor(); buildSocialInputs();
     try { await loadTaxonomy(); } catch { toast('No se pudo cargar la taxonomía', 'err'); }
-    fillDistrictSelects(); buildCategoryChecklist(); buildMetroChecklist();
+    fillDistrictSelects(); buildCategoryChecklist(); buildMetroChecklist(); fillBizCatFilter();
 
     bindBusinesses(); bindDrawer(); bindStats(); bindImport(); bindTaxonomy(); bindOrden(); bindLeads();
     $$('.admin-nav-btn').forEach(b => b.addEventListener('click', () => switchView(b.dataset.view)));

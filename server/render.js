@@ -48,6 +48,10 @@ function bizCover(b) {
   return bizPhoto(b);
 }
 function bizLogo(b) { return b.logo || null; }
+function fmtInt(n) { return Number(n || 0).toLocaleString('es-ES'); }
+function reviewsLabel(n) { return `${fmtInt(n)} ${Number(n) === 1 ? 'reseña' : 'reseñas'}`; }
+/* Horario „gol" (toate zilele Cerrado/necompletate, ex. leads importate) → nu-l afișăm. */
+function hasHours(h) { return !!h && Object.values(h).some(v => v && String(v).trim() && String(v).trim().toLowerCase() !== 'cerrado'); }
 
 /* Imagen de la tarjeta de servicio (home). Las categorías clásicas usan foto
    real (/assets/img/cat-<slug>.jpg); las nuevas usan una ilustración SVG
@@ -90,6 +94,8 @@ function icon(name) {
     doc: '<path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4"/><path d="M9.5 12h6M9.5 15.5h6"/>',
     clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
     lock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/>',
+    user: '<circle cx="12" cy="8" r="3.6"/><path d="M5 20c.8-3.6 3.6-5.6 7-5.6s6.2 2 7 5.6"/>',
+    users: '<circle cx="9" cy="8.5" r="3.2"/><path d="M3 19.5c.6-3.2 3-5 6-5s5.4 1.8 6 5"/><path d="M15.5 5.6a3.2 3.2 0 010 5.8M17.5 14.8c1.8.6 3 2.2 3.4 4.7"/>',
   };
   return `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${P[name] || ''}</svg>`;
 }
@@ -143,6 +149,7 @@ function businessCard(ctx, b) {
       <div class="card-body">
         <h3 class="card-title"><a href="${href}">${esc(b.name)}</a></h3>
         <span class="card-zone">${icon('pin')}${esc(b.zone || 'Madrid')}</span>
+        ${!b.rating && b.reviews ? `<span class="card-reviews">${icon('star')}${reviewsLabel(b.reviews)}</span>` : ''}
         <div class="card-tags">${tags}${more}</div>
         <div class="card-foot"><a class="card-cta" href="${href}">Ver ficha ${icon('arrow')}</a></div>
       </div>
@@ -656,12 +663,17 @@ function renderBusiness(ctx, b) {
     description: b.about || undefined, telephone: b.phone || undefined, url: b.website || abs(ctx, '/negocio/' + b.id),
     image: ogImg ? abs(ctx, ogImg) : undefined,
     logo: bizLogo(b) ? abs(ctx, bizLogo(b)) : undefined,
-    address: { '@type': 'PostalAddress', streetAddress: b.address || undefined, addressLocality: 'Madrid', addressRegion: 'Madrid', addressCountry: 'ES' },
+    address: { '@type': 'PostalAddress', streetAddress: b.address || undefined, addressLocality: b.district && b.district.kind === 'municipio' ? b.district.name : 'Madrid', addressRegion: 'Madrid', addressCountry: 'ES' },
     areaServed: b.zone || 'Madrid',
+    numberOfEmployees: b.team_size ? { '@type': 'QuantitativeValue', value: b.team_size } : undefined,
     aggregateRating: b.rating ? { '@type': 'AggregateRating', ratingValue: b.rating, reviewCount: b.reviews || 0 } : undefined,
   };
 
   const gallery = (b.photos || []).filter(Boolean);
+  const facts = [
+    b.contact_name ? `<span>${icon('user')}Responsable: ${esc(b.contact_name)}</span>` : '',
+    b.team_size ? `<span>${icon('users')}Equipo de ${fmtInt(b.team_size)} ${b.team_size === 1 ? 'persona' : 'personas'}</span>` : '',
+  ].filter(Boolean);
   const body = `<div class="container">
       ${breadcrumb(ctx, crumbs)}
       <article class="biz">
@@ -673,7 +685,9 @@ function renderBusiness(ctx, b) {
           ${bizLogo(b) ? `<span class="biz-logo"><img src="${attr(bizLogo(b))}" alt="${attr(b.name)} logo" /></span>` : ''}
           <h1>${esc(b.name)}</h1>
           <p class="biz-zone">${icon('pin')}${esc(b.address || b.zone || 'Madrid')}</p>
-          ${b.rating ? `<p class="biz-rating">${icon('star')}<b>${b.rating.toFixed(1)}</b> · ${b.reviews || 0} opiniones</p>` : ''}
+          ${b.rating ? `<p class="biz-rating">${icon('star')}<b>${b.rating.toFixed(1)}</b> · ${b.reviews || 0} opiniones</p>`
+            : b.reviews ? `<p class="biz-rating">${icon('star')}<b>${reviewsLabel(b.reviews)}</b></p>` : ''}
+          ${facts.length ? `<p class="biz-facts">${facts.join('')}</p>` : ''}
           <div class="biz-actions">
             ${b.phone ? `<a class="btn btn-primary" href="tel:${attr(tel(b.phone))}" data-track="phone">${icon('phone')} Llamar</a>` : ''}
             ${b.website ? `<a class="btn btn-ghost" href="${attr(b.website)}" target="_blank" rel="noopener nofollow" data-track="web">Visitar web</a>` : ''}
@@ -690,17 +704,17 @@ function renderBusiness(ctx, b) {
         </div>
         <aside class="biz-aside">
           ${leadForm({ businessId: b.id, context: b.name, title: `Pide presupuesto a ${b.name}`, sub: 'Rellena el formulario y este profesional te contactará. Gratis y sin compromiso.' })}
-          <section class="biz-card">
+          ${hasHours(b.hours) ? `<section class="biz-card">
             <h2>Horario</h2>
             <table class="hours">${DAYS.map(([k, lbl]) => `<tr><th>${lbl}</th><td>${esc((b.hours && b.hours[k]) || 'Cerrado')}</td></tr>`).join('')}</table>
-          </section>
+          </section>` : ''}
           <section class="biz-card">
             <h2>Contacto</h2>
             <ul class="contact-list">
               ${b.phone ? `<li>${icon('phone')}<a href="tel:${attr(tel(b.phone))}" data-track="phone">${esc(b.phone)}</a></li>` : ''}
               ${b.email ? `<li><a href="mailto:${attr(b.email)}">${esc(b.email)}</a></li>` : ''}
               ${b.website ? `<li><a href="${attr(b.website)}" target="_blank" rel="noopener nofollow" data-track="web">Sitio web</a></li>` : ''}
-              ${b.district ? `<li>${icon('pin')}<a href="/zona/${attr(b.district.slug)}">${esc(b.zone)}</a></li>` : ''}
+              ${b.district ? `<li>${icon('pin')}<a href="/zona/${attr(b.district.slug)}">${esc(b.zone)}</a></li>` : b.zone ? `<li>${icon('pin')}${esc(b.zone)}</li>` : ''}
             </ul>
             ${social.length ? `<div class="chips">${social.map(([k, v]) => `<a class="chip" href="${attr(v)}" target="_blank" rel="noopener nofollow">${esc(k)}</a>`).join('')}</div>` : ''}
           </section>

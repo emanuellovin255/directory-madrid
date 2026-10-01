@@ -62,6 +62,19 @@ Căutarea din hero (serviciu + distrito + barrio + metrou) **rutează direct** l
 
 Login real (cookie de sesiune semnat); toate rutele de scriere sunt protejate pe server.
 
+### Import leaduri (CSV-uri GHL)
+
+```bash
+node scripts/import-leads.js "/cale/Contractors Madrid.zip" --dry-run   # simulare + raport
+node scripts/import-leads.js "/cale/Contractors Madrid.zip"             # import real (backup automat al data.db)
+```
+
+- Importă **doar** nume firmă, telefon, web, zonă și nr. de reseñas; serviciul vine din numele fișierului (`Plagas_…csv` → Control de plagas).
+- Aceeași firmă (nume + telefon) în mai multe CSV-uri = **un singur negocio** cu mai multe categorii.
+- Zona (`Area`) → distrito/municipio (+ barrio dacă există); urbanizațiile rămân ca text (`El Montecillo · Las Rozas de Madrid`).
+- Re-rulabil: firmele existente primesc doar categoriile lipsă (editările manuale nu se ating). Cu `DATABASE_URL` scrie direct în Supabase.
+- Din admin completezi oricând: **responsable**, **nr. membri echipă**, **descriere**, logo/fotos, iar butonul **⌂ Portada** pune firma pe prima pagină (ordinea din *Orden / Clasamentos → Home*).
+
 ---
 
 ## 📁 Structura
