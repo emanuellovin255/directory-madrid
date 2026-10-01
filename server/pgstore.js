@@ -67,6 +67,9 @@ CREATE TABLE IF NOT EXISTS leads (
   created_at BIGINT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status, created_at DESC);
+CREATE TABLE IF NOT EXISTS meta (
+  key TEXT PRIMARY KEY, value TEXT
+);
 `;
 
 /* Coloane adăugate ulterior — Postgres CREATE TABLE IF NOT EXISTS nu le adaugă
@@ -82,9 +85,33 @@ const ALTERS = [
 let pool = null;
 let enabled = false;
 
+/* Versiunea datelor („meta.data_version"): fiecare scriere o schimbă, iar fiecare
+   instanță serverless o compară periodic cu versiunea pe care a încărcat-o →
+   dacă altă instanță (sau scriptul de import) a modificat ceva, se reîncarcă.
+   Fără asta, o instanță „caldă" ar servi date vechi până la reciclare. */
+let lastSeenVersion = null;
+let staleHint = false;
+async function getVersion(q) {
+  const { rows } = await (q || pool).query("SELECT value FROM meta WHERE key='data_version'");
+  return rows[0] ? rows[0].value : null;
+}
+async function bumpVersion(q) {
+  q = q || pool;
+  const prev = await getVersion(q);
+  const v = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+  await q.query("INSERT INTO meta (key,value) VALUES ('data_version',$1) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value", [v]);
+  if (prev !== lastSeenVersion) staleHint = true;   // altcineva a scris între timp → reîncarcă la următoarea verificare
+  lastSeenVersion = v;
+}
+async function isStale() {
+  if (!enabled) return false;
+  return staleHint || (await getVersion()) !== lastSeenVersion;
+}
+
 /* Creează pool-ul pg din DATABASE_URL, sau folosește unul injectat (test). */
 function init(injectedPool) {
   if (injectedPool) { pool = injectedPool; enabled = true; return true; }
+  if (pool) return enabled;   // reîncercare după un eșec: refolosim pool-ul
   const url = process.env.DATABASE_URL;
   if (!url) { enabled = false; return false; }
   const { Pool } = require('pg');
@@ -94,7 +121,7 @@ function init(injectedPool) {
     ssl: { rejectUnauthorized: false },
     max: Number(process.env.PG_POOL_MAX || 1),   // serverless: puține conexiuni
     idleTimeoutMillis: 10_000,
-    connectionTimeoutMillis: 15_000,
+    connectionTimeoutMillis: 10_000,
   });
   enabled = true;
   return true;
@@ -113,29 +140,52 @@ async function ensureSchema() {
   }
 }
 
+/* Citește tot conținutul din Postgres (async). Versiunea e citită ÎNAINTE de
+   date: o scriere concurentă duce cel mult la încă o reîncărcare, nu la pierderi. */
+async function fetchSnapshot() {
+  const version = await getVersion();
+  const tables = {};
+  for (const table of TABLE_NAMES) {
+    tables[table] = (await pool.query(`SELECT ${TABLES[table].join(',')} FROM ${table}`)).rows;
+  }
+  return { version, tables };
+}
+/* Scrie snapshot-ul în SQLite SINCRON (fără await) → nicio cerere nu vede o
+   bază pe jumătate încărcată. `clear` = golește întâi (reîncărcare). FK oprite pe
+   durata încărcării: Postgres n-are FK, deci un rând orfan nu blochează tot. */
+function loadSnapshot(sqlite, snap, clear) {
+  let total = 0;
+  sqlite.exec('PRAGMA foreign_keys = OFF');
+  sqlite.exec('BEGIN');
+  try {
+    if (clear) [...TABLE_NAMES].reverse().forEach(t => sqlite.exec(`DELETE FROM ${t}`));
+    for (const table of TABLE_NAMES) {
+      const cols = TABLES[table];
+      const stmt = sqlite.prepare(`INSERT OR REPLACE INTO ${table} (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`);
+      for (const r of snap.tables[table]) { stmt.run(...cols.map(c => normalizeForSqlite(r[c]))); total++; }
+    }
+    sqlite.exec('COMMIT');
+  } catch (e) { try { sqlite.exec('ROLLBACK'); } catch { /* ignoră */ } throw e; }
+  finally { sqlite.exec('PRAGMA foreign_keys = ON'); }
+  lastSeenVersion = snap.version;
+  staleHint = false;
+  return total;
+}
 /* Încarcă tot conținutul din Postgres în SQLite-ul in-memory.
    Returnează numărul total de rânduri (0 → Postgres e gol, trebuie seed). */
 async function hydrate(sqlite) {
   if (!enabled) return 0;
-  let total = 0;
-  for (const table of TABLE_NAMES) {
-    const cols = TABLES[table];
-    const { rows } = await pool.query(`SELECT ${cols.join(',')} FROM ${table}`);
-    if (!rows.length) continue;
-    const placeholders = cols.map(() => '?').join(',');
-    const stmt = sqlite.prepare(`INSERT OR REPLACE INTO ${table} (${cols.join(',')}) VALUES (${placeholders})`);
-    for (const r of rows) {
-      stmt.run(...cols.map(c => normalizeForSqlite(r[c])));
-      total++;
-    }
-  }
-  return total;
+  return loadSnapshot(sqlite, await fetchSnapshot(), false);
 }
 
 /* Rescrie complet starea din SQLite în Postgres (conținut administrat).
-   Apelat după fiecare scriere de admin — dataset mic, deci e ieftin. */
-async function dump(sqlite) {
+   Doar pentru operații în masă (seed pe bază goală, import, reset-demo).
+   Plasă de siguranță: refuză să înlocuiască o bază cu multe negocios printr-un
+   snapshot mult mai mic (ex. o instanță care a pornit doar cu datele demo),
+   în afară de cazul `allowShrink` (acțiune explicită de admin). */
+async function dump(sqlite, opts) {
   if (!enabled) return;
+  opts = opts || {};
   const snapshot = {};
   for (const table of TABLE_NAMES) {
     snapshot[table] = sqlite.prepare(`SELECT ${TABLES[table].join(',')} FROM ${table}`).all();
@@ -143,6 +193,13 @@ async function dump(sqlite) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    if (!opts.allowShrink) {
+      const pgCount = Number((await client.query('SELECT COUNT(*) AS c FROM businesses')).rows[0].c) || 0;
+      const n = snapshot.businesses.length;
+      if (pgCount >= 50 && n < pgCount / 2) {
+        throw new Error(`Refuz să suprascriu ${pgCount} negocios din Postgres cu doar ${n} (snapshot incomplet).`);
+      }
+    }
     // Golim fiecare tabel (PK-uri explicite → fără RESTART IDENTITY).
     for (const table of TABLE_NAMES) await client.query(`DELETE FROM ${table}`);
     for (const table of TABLE_NAMES) {
@@ -163,6 +220,7 @@ async function dump(sqlite) {
         await client.query(`INSERT INTO ${table} (${cols.join(',')}) VALUES ${values.join(',')}`, params);
       }
     }
+    await bumpVersion(client);
     await client.query('COMMIT');
   } catch (e) {
     await client.query('ROLLBACK');
@@ -206,6 +264,7 @@ async function upsertBusiness(row, categoryIds, metroIds) {
     for (const mid of (metroIds || [])) {
       await client.query('INSERT INTO business_metros (business_id,metro_id) VALUES ($1,$2) ON CONFLICT (business_id,metro_id) DO NOTHING', [row.id, mid]);
     }
+    await bumpVersion(client);
     await client.query('COMMIT');
   } catch (e) { await client.query('ROLLBACK'); throw e; }
   finally { client.release(); }
@@ -219,20 +278,36 @@ async function deleteBusiness(id) {
     await client.query('DELETE FROM business_metros WHERE business_id=$1', [id]);
     await client.query('DELETE FROM placements WHERE business_id=$1', [id]);
     await client.query('DELETE FROM businesses WHERE id=$1', [id]);
+    await bumpVersion(client);
     await client.query('COMMIT');
   } catch (e) { await client.query('ROLLBACK'); throw e; }
   finally { client.release(); }
+}
+/* Upsert pe loturi (fără ștergeri) — pentru taxonomie adăugată la boot. */
+async function upsertRows(table, rows) {
+  if (!enabled || !rows || !rows.length) return;
+  const cols = TABLES[table], pk = PK[table];
+  const updates = cols.filter(c => !pk.includes(c)).map(c => `${c}=EXCLUDED.${c}`).join(',');
+  for (let i = 0; i < rows.length; i += 200) {
+    const batch = rows.slice(i, i + 200), params = [];
+    let p = 1;
+    const values = batch.map(r => { params.push(...cols.map(c => r[c] === undefined ? null : r[c])); return '(' + cols.map(() => '$' + (p++)).join(',') + ')'; });
+    await pool.query(`INSERT INTO ${table} (${cols.join(',')}) VALUES ${values.join(',')} ON CONFLICT (${pk.join(',')}) DO ${updates ? 'UPDATE SET ' + updates : 'NOTHING'}`, params);
+  }
+  await bumpVersion();
 }
 /* Upsert generic pentru un rând de taxonomie (categories/metros/neighborhoods…). */
 async function upsertRow(table, row) {
   if (!enabled) return;
   const cols = TABLES[table];
   await pool.query(upsertSql(table, cols, PK[table]), cols.map(c => row[c] === undefined ? null : row[c]));
+  await bumpVersion();
 }
 async function deleteRowsIn(table, whereCol, vals) {
   if (!enabled || !vals || !vals.length) return;
   const ph = vals.map((_, i) => '$' + (i + 1)).join(',');
   await pool.query(`DELETE FROM ${table} WHERE ${whereCol} IN (${ph})`, vals);
+  await bumpVersion();
 }
 /* Rescrie DOAR placement-urile unui context (mărginit — max câteva zeci de rânduri). */
 async function replacePlacements(context, rows) {
@@ -244,6 +319,7 @@ async function replacePlacements(context, rows) {
     for (const r of (rows || [])) {
       await client.query('INSERT INTO placements (context,business_id,position) VALUES ($1,$2,$3) ON CONFLICT (context,business_id) DO UPDATE SET position=EXCLUDED.position', [context, r.business_id, r.position]);
     }
+    await bumpVersion(client);
     await client.query('COMMIT');
   } catch (e) { await client.query('ROLLBACK'); throw e; }
   finally { client.release(); }
@@ -302,6 +378,7 @@ async function deleteLead(id) {
 
 module.exports = {
   init, isEnabled, ensureSchema, hydrate, dump, TABLES, TABLE_NAMES, DDL,
-  upsertBusiness, deleteBusiness, upsertRow, deleteRowsIn, replacePlacements,
+  fetchSnapshot, loadSnapshot, isStale, getVersion,
+  upsertBusiness, deleteBusiness, upsertRow, upsertRows, deleteRowsIn, replacePlacements,
   insertLead, listLeads, countLeadsByStatus, updateLeadStatus, deleteLead,
 };

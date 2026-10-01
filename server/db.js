@@ -873,11 +873,36 @@ async function initPersistence(injectedPool) {
 /* Rescrie COMPLET starea în Postgres (full dump). Scump la scară → îl folosim
    DOAR pentru operații în masă (import / reset-demo). Pentru scrierile punctuale
    folosim funcțiile persist* incrementale de mai jos. */
-async function persist() {
+async function persist(opts) {
   if (!pgstore.isEnabled()) return;
-  await pgstore.dump(db);
+  await pgstore.dump(db, opts);
+}
+/* Doar taxonomia (categorii, distritos/municipios, barrios, metro) — upsert, fără
+   să șteargă sau să rescrie negocios. Pentru migrările de la boot. */
+async function persistTaxonomy() {
+  if (!pgstore.isEnabled()) return;
+  for (const t of ['districts', 'categories', 'neighborhoods', 'metros']) {
+    await pgstore.upsertRows(t, db.prepare(`SELECT ${pgstore.TABLES[t].join(',')} FROM ${t}`).all());
+  }
 }
 function persistenceEnabled() { return pgstore.isEnabled(); }
+
+/* Reîncarcă din Postgres dacă altă instanță / scriptul de import a modificat
+   datele (vezi pgstore „data_version"). Verificare ieftină, max. o dată la 20s
+   per instanță; la eroare servim mai departe ce avem în memorie. */
+const FRESH_EVERY_MS = 20 * 1000;
+let _lastFreshCheck = 0;
+async function refreshIfStale(force) {
+  if (!pgstore.isEnabled()) return false;
+  const t = Date.now();
+  if (!force && t - _lastFreshCheck < FRESH_EVERY_MS) return false;
+  _lastFreshCheck = t;
+  if (!(await pgstore.isStale())) return false;
+  const snap = await pgstore.fetchSnapshot();
+  pgstore.loadSnapshot(db, snap, true);
+  bumpDataVersion();
+  return true;
+}
 
 /* ---- Persistență INCREMENTALĂ (o singură entitate → un singur upsert) --------
    Fără astea, orice editare de admin (sau fiecare negocio împins din CRM) ar
@@ -935,7 +960,7 @@ async function persistPlacements(context) {
 
 module.exports = {
   db, DAYS, slugify, now,
-  initPersistence, persist, persistenceEnabled,
+  initPersistence, persist, persistTaxonomy, persistenceEnabled, refreshIfStale,
   persistBusiness, persistBusinessDelete, persistCategory, persistCategoryDelete,
   persistMetro, persistMetroDelete, persistNeighborhood, persistPlacements,
   // categories

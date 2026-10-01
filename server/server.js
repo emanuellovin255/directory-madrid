@@ -71,32 +71,53 @@ const RESERVED_SLUGS = new Set([
 function isReservedSlug(s) { return RESERVED_SLUGS.has(String(s || '').toLowerCase()); }
 
 /* --------------------- Bootstrap: Supabase + seed --------------------- */
-/* Rulează O DATĂ înainte de a servi cereri:
-   1) hidratează SQLite-ul in-memory din Postgres (dacă e configurat);
+/* Rulează înainte de a servi cereri:
+   1) hidratează SQLite-ul in-memory din Postgres (dacă e configurat), cu reîncercări;
    2) seed dacă e gol (Postgres gol sau fără Supabase);
-   3) dacă tocmai am făcut seed într-un Postgres gol → îl salvăm în Postgres. */
-const ready = (async () => {
+   3) Postgres GOL → salvăm seed-ul complet; Postgres cu date → doar taxonomia nouă.
+   IMPORTANT: dacă Postgres e configurat dar NU răspunde, NU facem seed demo și NU
+   scriem nimic — altfel instanța ar suprascrie datele reale cu cele 9 negocios demo
+   (s-a întâmplat la un timeout de conexiune). Răspundem 503 și reîncercăm la
+   următoarea cerere. */
+async function boot() {
   let hydrated = 0;
-  try {
-    hydrated = await DB.initPersistence();
-  } catch (e) {
-    console.error('⚠️  Nu m-am putut conecta la Postgres (Supabase):', e.message);
+  if (process.env.DATABASE_URL) {
+    let lastErr = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try { hydrated = await DB.initPersistence(); lastErr = null; break; }
+      catch (e) {
+        lastErr = e;
+        console.error(`⚠️  Nu m-am putut conecta la Postgres (Supabase), încercarea ${attempt}/3:`, e.message);
+        if (attempt < 3) await new Promise(r => setTimeout(r, 1000 * attempt));
+      }
+    }
+    if (lastErr) throw lastErr;
   }
   seedIfEmpty();
   // Migrări idempotente: adaugă categoriile + cele 178 de municipios pe DB deja
   // populate (disc/Supabase), unde seedIfEmpty nu mai intră.
   const catsChanged = ensureCategories();
   const munisChanged = ensureMunicipios();
-  if (DB.persistenceEnabled() && (hydrated === 0 || catsChanged > 0 || munisChanged > 0)) {
-    try { await DB.persist(); }
-    catch (e) { console.error('⚠️  Nu am putut salva seed-ul în Postgres:', e.message); }
+  if (DB.persistenceEnabled()) {
+    try {
+      if (hydrated === 0) await DB.persist();                         // Postgres gol → seed complet
+      else if (catsChanged > 0 || munisChanged > 0) await DB.persistTaxonomy();   // doar taxonomia, negocios neatinse
+    } catch (e) { console.error('⚠️  Nu am putut salva seed-ul în Postgres:', e.message); }
   }
-})();
+}
+let bootPromise = null;
+function ensureReady() {
+  if (!bootPromise) bootPromise = boot().catch(e => { bootPromise = null; throw e; });   // eșec → reîncearcă la cererea următoare
+  return bootPromise;
+}
+const ready = ensureReady();
+ready.catch(() => { /* raportat în boot(); cererile primesc 503 și reîncearcă */ });
 
 /* Full dump în Postgres după o operație în masă (import / reset-demo), apoi
    răspunde. Scump la scară → NU pentru scrieri punctuale (vezi respondAfter). */
 async function saveAndRespond(res, payload, status) {
-  try { await DB.persist(); }
+  // Acțiuni explicite de admin (import / reset-demo) → au voie să micșoreze datele.
+  try { await DB.persist({ allowShrink: true }); }
   catch (e) { console.error('persist error:', e); return res.status(500).json({ error: 'No se pudo guardar en la base de datos' }); }
   return res.status(status || 200).json(payload);
 }
@@ -132,8 +153,18 @@ app.use((req, res, next) => {
   next();
 });
 
-/* Așteaptă bootstrap-ul (hidratare Postgres + seed) înainte de orice cerere. */
-app.use((req, res, next) => { ready.then(() => next()).catch(next); });
+/* Așteaptă bootstrap-ul (hidratare Postgres + seed) înainte de orice cerere.
+   Dacă baza nu răspunde: 503 (nu date demo) și reîncercare la cererea următoare. */
+app.use((req, res, next) => {
+  ensureReady().then(() => {
+    // Date modificate de altă instanță / de import → reîncărcăm (max. o dată la 20s).
+    DB.refreshIfStale().catch(e => console.error('⚠️  refresh Postgres:', e.message)).then(() => next());
+  }, () => {
+    res.setHeader('Retry-After', '5');
+    if (req.path.startsWith('/api/')) return res.status(503).json({ error: 'Servicio temporalmente no disponible. Inténtalo en unos segundos.' });
+    res.status(503).type('html').send('<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="5"><meta name="robots" content="noindex"><title>Un momento…</title></head><body style="font-family:system-ui,sans-serif;display:grid;place-items:center;min-height:90vh;margin:0;color:#333;background:#fafafa"><p>Estamos cargando el directorio. Vuelve a intentarlo en unos segundos…</p></body></html>');
+  });
+});
 
 /* Local, fără login: pagina de login nu se mai încarcă niciodată (nici măcar
    pentru o clipă) → browserul nu mai are unde să propună „Google"/parole. */
@@ -575,7 +606,7 @@ app.use((err, req, res, next) => {
 /* Pe serverless (Vercel) exportăm app-ul ca handler — fără listen.
    Local (npm start) pornim serverul HTTP normal. */
 if (!SERVERLESS && require.main === module) {
-  ready.then(() => {
+  ready.catch(() => { /* fără Postgres: pornim oricum, cererile primesc 503 și reîncearcă */ }).then(() => {
     app.listen(PORT, () => {
       const usingDefaults = ADMIN_PASSWORD === 'admin' || SESSION_SECRET === 'dev-insecure-secret-change-me';
       console.log(`\n  ${R.SITE.name}`);
