@@ -70,9 +70,18 @@ DDM.api = (function () {
 
     // Leads
     submitLead: payload => req('POST', '/api/leads', payload),
-    leads: status => req('GET', '/api/leads' + qs({ status })),
+    leads: (status, kind) => req('GET', '/api/leads' + qs({ status, kind })),
+    approveClaim: id => req('POST', '/api/leads/' + enc(id) + '/approve-claim'),
     setLeadStatus: (id, status) => req('PATCH', '/api/leads/' + enc(id), { status }),
     deleteLead: id => req('DELETE', '/api/leads/' + enc(id)),
+
+    // Historias de profesionales
+    stories: () => req('GET', '/api/stories').then(d => d.stories),
+    getStory: id => req('GET', '/api/stories/' + enc(id)),
+    createStory: d => req('POST', '/api/stories', d),
+    updateStory: (id, d) => req('PUT', '/api/stories/' + enc(id), d),
+    deleteStory: id => req('DELETE', '/api/stories/' + enc(id)),
+    storyPreview: d => req('POST', '/api/stories/preview', d),
 
     // Analytics
     trackVisit: () => req('POST', '/api/track/visit').catch(() => {}),

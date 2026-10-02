@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Panel de administración — Reformas Madrid</title>
+  <title>Panel de administración — Profesionales Madrid</title>
   <link rel="stylesheet" href="assets/css/styles.css" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23c8102e'/%3E%3Ctext x='16' y='23' font-size='19' text-anchor='middle' fill='white' font-family='sans-serif' font-weight='bold'%3ER%3C/text%3E%3C/svg%3E" />
 </head>
@@ -16,7 +16,7 @@
         <span class="brand-logo" aria-hidden="true">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20h18"/><path d="M6 20V9l6-4 6 4v11"/><path d="M10 20v-5h4v5"/></svg>
         </span>
-        <b>Reformas Madrid</b>
+        <b>Profesionales Madrid</b>
       </div>
       <button class="admin-nav-btn active" data-view="negocios">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
@@ -26,6 +26,10 @@
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.4 5.5 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.4-6.5A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.8 1.5z"/></svg>
         Leads
         <span class="nav-badge hidden" id="leadsBadge">0</span>
+      </button>
+      <button class="admin-nav-btn" data-view="historias">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M9 7h7M9 11h5"/></svg>
+        Historias
       </button>
       <button class="admin-nav-btn" data-view="taxonomia">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h18M3 12h18M3 17h18"/><circle cx="7" cy="7" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="17" cy="17" r="1"/></svg>
@@ -89,13 +93,21 @@
       <!-- Vista: Leads -->
       <section id="view-leads" class="hidden">
         <div class="admin-head">
-          <div><h1>Leads</h1><p>Solicitudes de presupuesto enviadas por los visitantes</p></div>
+          <div><h1>Leads</h1><p>Presupuestos de clientes, reclamaciones de ficha, altas, historias y mensajes de contacto</p></div>
           <div class="admin-actions lead-filter" id="leadFilter">
             <button class="btn btn-soft btn-sm is-active" data-status="">Todos</button>
             <button class="btn btn-ghost btn-sm" data-status="new">Nuevos</button>
             <button class="btn btn-ghost btn-sm" data-status="contacted">Contactados</button>
             <button class="btn btn-ghost btn-sm" data-status="archived">Archivados</button>
           </div>
+        </div>
+        <div class="admin-actions lead-filter lead-kind-filter" id="leadKindFilter">
+          <button class="btn btn-soft btn-sm is-active" data-kind="">Todos los tipos</button>
+          <button class="btn btn-ghost btn-sm" data-kind="quote">Presupuestos <b data-kind-count="quote"></b></button>
+          <button class="btn btn-ghost btn-sm" data-kind="claim">Reclamaciones <b data-kind-count="claim"></b></button>
+          <button class="btn btn-ghost btn-sm" data-kind="alta">Altas <b data-kind-count="alta"></b></button>
+          <button class="btn btn-ghost btn-sm" data-kind="historia">Historias <b data-kind-count="historia"></b></button>
+          <button class="btn btn-ghost btn-sm" data-kind="contacto">Contacto <b data-kind-count="contacto"></b></button>
         </div>
         <div class="stat-row" id="leadCounts"></div>
         <div class="panel">
@@ -150,6 +162,18 @@
           <div class="panel-pad"><div class="rank-list" id="topList"></div></div>
         </div>
         <p class="divider-note">⚠️ Datos de demostración, contabilizados en el servidor (SQLite). Para analítica agregada de producción, ver README.md.</p>
+      </section>
+
+      <!-- Vista: Historias de profesionales -->
+      <section id="view-historias" class="hidden">
+        <div class="admin-head">
+          <div><h1>Historias</h1><p>Artículos sobre negocios del directorio (lead magnet). Solo las publicadas son públicas y entran en el sitemap.</p></div>
+          <button class="btn btn-primary btn-sm" id="storyNew">+ Nueva historia</button>
+        </div>
+        <div class="panel">
+          <div class="panel-pad"><div class="story-admin-list" id="storyList"><p class="muted">Cargando…</p></div></div>
+        </div>
+        <p class="divider-note">Proceso: entrevista o cuestionario → borrador → el negocio lo aprueba → publicar. Guía completa en <code>docs/historias.md</code>.</p>
       </section>
 
       <!-- Vista: Orden / Clasamentos -->
@@ -339,8 +363,19 @@
           <div class="field col-2">
             <label style="display:flex;align-items:center;gap:9px;cursor:pointer">
               <input type="checkbox" id="f-featured" style="width:18px;height:18px;accent-color:var(--accent)" />
-              Marcar como <b>destacado</b> (aparece primero)
+              Marcar como <b>destacado</b> (sale con la etiqueta «Patrocinado»)
             </label>
+          </div>
+          <div class="field col-2">
+            <label style="display:flex;align-items:center;gap:9px;cursor:pointer">
+              <input type="checkbox" id="f-claimed" style="width:18px;height:18px;accent-color:#059669" />
+              Ficha <b>verificada</b>: reclamada por el negocio y comprobada por teléfono (insignia ✓, sale antes en los listados y se indexa en Google)
+            </label>
+          </div>
+          <div class="field col-2 hidden" id="f-badge-wrap">
+            <label for="f-badge">Código de la insignia para la web del negocio <span class="hint">(cópialo y envíaselo; enlaza a su ficha)</span></label>
+            <textarea class="input" id="f-badge" rows="3" readonly style="font-family:ui-monospace,Menlo,monospace;font-size:12px"></textarea>
+            <button type="button" class="btn btn-ghost btn-sm" id="f-badge-copy" style="margin-top:6px">Copiar código</button>
           </div>
         </div>
 
@@ -411,6 +446,60 @@
       <div class="iu-foot">
         <button type="button" class="btn btn-ghost" id="catCancel">Cancelar</button>
         <button type="button" class="btn btn-primary" id="catSave">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Historia -->
+  <div class="modal-backdrop" id="storyBackdrop">
+    <div class="modal import-url-modal story-modal" role="dialog" aria-modal="true" aria-labelledby="storyModalTitle">
+      <div class="iu-head"><h3 id="storyModalTitle">Nueva historia</h3>
+        <button class="modal-close" id="storyClose" aria-label="Cerrar" style="position:static;box-shadow:none;background:var(--surface-2)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+      </div>
+      <div class="iu-body story-modal-body">
+        <input type="hidden" id="st-id" />
+        <div class="field"><label for="st-biz-q">Negocio <span class="hint">(busca por nombre o teléfono)</span></label>
+          <div class="st-biz-picker">
+            <input class="input" id="st-biz-q" autocomplete="off" placeholder="Empieza a escribir…" />
+            <div class="st-biz-results hidden" id="st-biz-results"></div>
+          </div>
+          <div class="st-biz-sel hidden" id="st-biz-sel"></div>
+        </div>
+        <div class="form-grid" style="margin-top:12px">
+          <div class="field col-2"><label for="st-title">Título <span class="req">*</span></label><input class="input" id="st-title" placeholder="p. ej. 25 años arreglando fugas en edificios antiguos de Chamberí" /></div>
+          <div class="field col-2"><label for="st-slug">URL <span class="hint">(opcional; se genera del título: /historias/…)</span></label><input class="input" id="st-slug" placeholder="fontanero-chamberi-juan-garcia" /></div>
+          <div class="field col-2"><label for="st-excerpt">Resumen <span class="hint">(1–2 frases; sale en Google y en las tarjetas) · <span id="st-excerpt-n">0</span>/160</span></label><textarea class="input textarea" id="st-excerpt" rows="2"></textarea></div>
+          <div class="field col-2">
+            <label for="st-body">Texto <span class="hint">(Markdown: <code>## Título</code>, <code>- lista</code>, <code>&gt; cita</code>, <code>**negrita**</code>, <code>[texto](https://…)</code>) · <b id="st-words">0</b> palabras (objetivo: 800; mínimo para publicar: 300)</span></label>
+            <textarea class="input textarea st-body" id="st-body" rows="16" placeholder="## Cómo empezó&#10;…&#10;&#10;## Un trabajo del que está orgulloso&#10;…&#10;&#10;> «Cita literal del profesional»&#10;&#10;## Consejos del profesional&#10;- …"></textarea>
+            <div style="margin-top:6px"><button type="button" class="btn btn-ghost btn-sm" id="st-preview-btn">Vista previa</button></div>
+            <div class="st-preview hidden" id="st-preview"></div>
+          </div>
+          <div class="field col-2"><label>Portada</label>
+            <div class="st-cover-row"><img id="st-cover-preview" class="st-cover-img hidden" alt="" />
+              <button type="button" class="btn btn-ghost btn-sm" id="st-cover-btn">Subir portada</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="st-cover-clear">Quitar</button>
+              <input type="file" id="st-cover-input" accept="image/*" class="hidden" />
+            </div>
+          </div>
+          <div class="field col-2"><label>Galería <span class="hint">(fotos de trabajos)</span></label>
+            <div class="photo-gallery" id="st-photos"></div>
+            <input type="file" id="st-photos-input" accept="image/*" multiple class="hidden" />
+          </div>
+          <div class="field col-2"><label style="display:flex;align-items:center;gap:9px;cursor:pointer"><input type="checkbox" id="st-consent" style="width:18px;height:18px;accent-color:var(--accent)" /> El negocio ha dado su <b>consentimiento</b> para publicar su nombre, fotos y respuestas</label></div>
+          <div class="field col-2"><label style="display:flex;align-items:center;gap:9px;cursor:pointer"><input type="checkbox" id="st-sponsored" style="width:18px;height:18px;accent-color:#b45309" /> <b>Contenido patrocinado</b> (cliente de pago): etiqueta visible y enlace a su web con rel="sponsored"</label></div>
+          <div class="field"><label for="st-status">Estado</label>
+            <select class="input" id="st-status"><option value="draft">Borrador (no público)</option><option value="published">Publicada</option></select>
+          </div>
+        </div>
+        <div class="iu-warn hidden" id="st-warn"></div>
+        <div class="iu-error hidden" id="st-error"></div>
+      </div>
+      <div class="iu-foot">
+        <button type="button" class="btn btn-ghost lead-del hidden" id="st-delete" style="margin-right:auto">Eliminar</button>
+        <a class="btn btn-ghost hidden" id="st-view" target="_blank" rel="noopener">Ver publicada</a>
+        <button type="button" class="btn btn-ghost" id="st-cancel">Cancelar</button>
+        <button type="button" class="btn btn-primary" id="st-save">Guardar</button>
       </div>
     </div>
   </div>

@@ -21,10 +21,11 @@ const TABLES = {
   categories:          ['id', 'slug', 'name', 'parent_id', 'icon', 'intro', 'display_order', 'in_nav'],
   neighborhoods:       ['id', 'slug', 'name', 'district_id'],
   metros:              ['id', 'slug', 'name', 'lines'],
-  businesses:          ['id', 'name', 'address', 'about', 'district_id', 'neighborhood_id', 'phone', 'email', 'website', 'hours', 'social', 'rating', 'reviews', 'featured', 'photo', 'logo', 'photos', 'area', 'contact_name', 'team_size', 'created_at'],
+  businesses:          ['id', 'name', 'address', 'about', 'district_id', 'neighborhood_id', 'phone', 'email', 'website', 'hours', 'social', 'rating', 'reviews', 'featured', 'photo', 'logo', 'photos', 'area', 'contact_name', 'team_size', 'claimed', 'claimed_at', 'created_at'],
   business_categories: ['business_id', 'category_id'],
   business_metros:     ['business_id', 'metro_id'],
   placements:          ['context', 'business_id', 'position'],
+  stories:             ['id', 'business_id', 'title', 'excerpt', 'body', 'cover', 'photos', 'status', 'sponsored', 'consent_at', 'published_at', 'updated_at', 'created_at'],
 };
 const TABLE_NAMES = Object.keys(TABLES);
 
@@ -49,7 +50,8 @@ CREATE TABLE IF NOT EXISTS businesses (
   district_id INTEGER, neighborhood_id INTEGER, phone TEXT, email TEXT, website TEXT,
   hours TEXT, social TEXT, rating DOUBLE PRECISION, reviews INTEGER DEFAULT 0,
   featured INTEGER DEFAULT 0, photo TEXT, logo TEXT, photos TEXT,
-  area TEXT, contact_name TEXT, team_size INTEGER, created_at BIGINT
+  area TEXT, contact_name TEXT, team_size INTEGER, claimed INTEGER DEFAULT 0, claimed_at BIGINT,
+  created_at BIGINT
 );
 CREATE TABLE IF NOT EXISTS business_categories (
   business_id TEXT NOT NULL, category_id INTEGER NOT NULL, PRIMARY KEY (business_id, category_id)
@@ -64,9 +66,15 @@ CREATE TABLE IF NOT EXISTS placements (
 CREATE TABLE IF NOT EXISTS leads (
   id TEXT PRIMARY KEY, business_id TEXT, name TEXT NOT NULL, phone TEXT, email TEXT,
   message TEXT, context TEXT, source_url TEXT, status TEXT NOT NULL DEFAULT 'new',
+  kind TEXT NOT NULL DEFAULT 'quote', payload TEXT,
   created_at BIGINT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status, created_at DESC);
+CREATE TABLE IF NOT EXISTS stories (
+  id TEXT PRIMARY KEY, business_id TEXT, title TEXT NOT NULL, excerpt TEXT, body TEXT, cover TEXT, photos TEXT,
+  status TEXT NOT NULL DEFAULT 'draft', sponsored INTEGER DEFAULT 0, consent_at BIGINT, published_at BIGINT,
+  updated_at BIGINT, created_at BIGINT
+);
 CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY, value TEXT
 );
@@ -80,6 +88,10 @@ const ALTERS = [
   `ALTER TABLE businesses ADD COLUMN IF NOT EXISTS area TEXT`,
   `ALTER TABLE businesses ADD COLUMN IF NOT EXISTS contact_name TEXT`,
   `ALTER TABLE businesses ADD COLUMN IF NOT EXISTS team_size INTEGER`,
+  `ALTER TABLE businesses ADD COLUMN IF NOT EXISTS claimed INTEGER DEFAULT 0`,
+  `ALTER TABLE businesses ADD COLUMN IF NOT EXISTS claimed_at BIGINT`,
+  `ALTER TABLE leads ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'quote'`,
+  `ALTER TABLE leads ADD COLUMN IF NOT EXISTS payload TEXT`,
 ];
 
 let pool = null;
@@ -238,6 +250,7 @@ const PK = {
   business_categories: ['business_id', 'category_id'],
   business_metros: ['business_id', 'metro_id'],
   placements: ['context', 'business_id'],
+  stories: ['id'],
 };
 function upsertSql(table, cols, pkCols) {
   const ph = cols.map((_, i) => '$' + (i + 1)).join(',');
@@ -343,15 +356,28 @@ function normalizeForSqlite(v) {
 async function insertLead(row) {
   if (!enabled) return;
   await pool.query(
-    `INSERT INTO leads (id,business_id,name,phone,email,message,context,source_url,status,created_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-    [row.id, row.business_id, row.name, row.phone, row.email, row.message, row.context, row.source_url, row.status, row.created_at]);
+    `INSERT INTO leads (id,business_id,name,phone,email,message,context,source_url,status,kind,payload,created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+    [row.id, row.business_id, row.name, row.phone, row.email, row.message, row.context, row.source_url, row.status, row.kind || 'quote', row.payload || null, row.created_at]);
+}
+async function getLead(id) {
+  if (!enabled) return null;
+  const { rows } = await pool.query(
+    `SELECT l.*, b.name AS business_name FROM leads l LEFT JOIN businesses b ON b.id = l.business_id WHERE l.id = $1`, [id]);
+  return rows[0] || null;
+}
+async function countNewLeadsByKind() {
+  if (!enabled) return [];
+  const { rows } = await pool.query(`SELECT kind, COUNT(*)::int AS c FROM leads WHERE status = 'new' GROUP BY kind`);
+  return rows;
 }
 async function listLeads(filter) {
   if (!enabled) return [];
   filter = filter || {};
-  const params = []; let where = '';
-  if (filter.status) { params.push(filter.status); where = 'WHERE l.status = $1'; }
+  const params = [], conds = [];
+  if (filter.status) { params.push(filter.status); conds.push('l.status = $' + params.length); }
+  if (filter.kind) { params.push(filter.kind); conds.push('l.kind = $' + params.length); }
+  const where = conds.length ? 'WHERE ' + conds.join(' AND ') : '';
   const { rows } = await pool.query(
     `SELECT l.*, b.name AS business_name FROM leads l
      LEFT JOIN businesses b ON b.id = l.business_id
@@ -380,5 +406,5 @@ module.exports = {
   init, isEnabled, ensureSchema, hydrate, dump, TABLES, TABLE_NAMES, DDL,
   fetchSnapshot, loadSnapshot, isStale, getVersion,
   upsertBusiness, deleteBusiness, upsertRow, upsertRows, deleteRowsIn, replacePlacements,
-  insertLead, listLeads, countLeadsByStatus, updateLeadStatus, deleteLead,
+  insertLead, getLead, listLeads, countLeadsByStatus, countNewLeadsByKind, updateLeadStatus, deleteLead,
 };

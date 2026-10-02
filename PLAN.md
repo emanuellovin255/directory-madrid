@@ -1,4 +1,4 @@
-# PLAN — Reformas Madrid
+# PLAN — Profesionales Madrid (profesionalesmadrid.es)
 
 > **Estado:** full-stack en producción. SSR con Node + Express, SQLite en local y
 > **Supabase Postgres** en Vercel. Directorio SEO de profesionales de reformas y
@@ -47,6 +47,14 @@ almacén durable; en local sin Supabase → SQLite en disco (`server/data.db`).
 - [x] **Seguridad**: bloqueo del panel si `ADMIN_PASSWORD`/`SESSION_SECRET` están por defecto en producción; rate-limit de login; cabeceras de seguridad; token de API con permisos mínimos.
 - [x] **SEO anti-thin**: `noindex,follow` en listados vacíos y en `/buscar`; sitemap solo con páginas con contenido + `<lastmod>` + caché.
 - [x] Analítica (Plausible/GA4) opcional, cargada **solo tras el consentimiento** de cookies.
+- [x] **Rebrand + dominio canónico** (`SITE_URL`): canonical/OG/JSON-LD/sitemap fijos y 301 desde *.vercel.app.
+- [x] **Indexación limpia**: fichas sin contenido propio → `noindex,follow` (indexables al reclamarlas o con descripción ≥150); listados con < `MIN_LISTING` empresas → noindex; enlaces internos solo a páginas con empresas.
+- [x] **Sitemap por tipos** (principales, servicios, distritos, municipios, barrios, metro, historias, negocios-N) + `SITEMAP_TYPES` para lanzar por olas.
+- [x] **Funnel profesional**: `/profesionales` (+ 8 páginas por oficio), reclamar ficha desde la propia ficha, aprobación en el admin, insignia ✓ Verificado (sale antes en los listados) y sello SVG para su web.
+- [x] **Historias de profesionales** (lead magnet 2): `/historias`, editor en el admin, tarjetas «Historia».
+- [x] **Contenido**: textos propios por categoría y por categoría×distrito, 12 páginas `/precios`, 8 `/guias`, `/sobre-nosotros`, `/contacto`.
+- [x] **Imágenes en Supabase Storage** (`SUPABASE_URL` + `SUPABASE_SERVICE_KEY`).
+- [x] Scripts: `export-profiles.js` (CSV para GHL), `enrich-from-web.js` (dirección/horario/redes desde su web).
 
 ## Próximos pasos (ideas)
 - Almacenar imágenes en object storage/CDN (hoy inline base64 en Postgres) con WebP + `srcset`.

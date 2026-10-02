@@ -12,7 +12,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const DB = require('./db');
 
-const UA = 'ReformasMadridBot/1.0 (+import automat; sin IA)';
+const UA = 'ProfesionalesMadridBot/1.0 (+https://profesionalesmadrid.es/sobre-nosotros)';
 const DAYS = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'];
 const SCHEMA_DAY = {
   monday: 'lunes', tuesday: 'martes', wednesday: 'miercoles', thursday: 'jueves',

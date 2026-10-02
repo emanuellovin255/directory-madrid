@@ -1,5 +1,6 @@
 /* =========================================================================
-   notify.js — Notificare best-effort a unui lead nou (cerere de presupuesto).
+   notify.js — Notificare best-effort a unui lead nou (presupuesto, reclamación,
+   alta, historia o contacto).
 
    Toate canalele sunt OPȚIONALE și se activează prin variabile de mediu. Dacă
    niciunul nu e configurat, `notifyLead` e un no-op: lead-ul rămâne oricum în
@@ -14,15 +15,27 @@
    ========================================================================= */
 'use strict';
 
+/* Título según el tipo de solicitud (ver DB.LEAD_KINDS). */
+const KIND_TITLE = {
+  quote: 'Nuevo presupuesto',
+  claim: 'Nueva reclamación de ficha',
+  alta: 'Nueva alta de negocio',
+  historia: 'Solicitud de historia',
+  contacto: 'Nuevo mensaje de contacto',
+};
+function kindTitle(lead) { return KIND_TITLE[lead.kind] || KIND_TITLE.quote; }
+
 function fmtLead(lead, siteName) {
+  const extra = Object.entries(lead.payload || {}).map(([k, v]) => `${k}: ${v}`);
   return [
-    `Nuevo presupuesto — ${siteName || 'Directorio'}`,
+    `${kindTitle(lead)} — ${siteName || 'Directorio'}`,
     lead.businessName ? `Negocio: ${lead.businessName}` : null,
     lead.context ? `Página: ${lead.context}` : null,
     `Nombre: ${lead.name}`,
     lead.phone ? `Teléfono: ${lead.phone}` : null,
     lead.email ? `Email: ${lead.email}` : null,
     lead.message ? `Mensaje: ${lead.message}` : null,
+    ...extra,
     lead.source_url ? `URL: ${lead.source_url}` : null,
   ].filter(Boolean).join('\n');
 }
@@ -59,7 +72,7 @@ async function notifyLead(lead, opts) {
     jobs.push(postJson('https://api.resend.com/emails', {
       from: process.env.LEADS_EMAIL_FROM || 'Leads <onboarding@resend.dev>',
       to: [process.env.LEADS_EMAIL_TO],
-      subject: `Nuevo presupuesto${lead.businessName ? ' — ' + lead.businessName : ''}`,
+      subject: `${kindTitle(lead)}${lead.businessName ? ' — ' + lead.businessName : ''}`,
       text,
     }, { authorization: 'Bearer ' + process.env.RESEND_API_KEY }));
 

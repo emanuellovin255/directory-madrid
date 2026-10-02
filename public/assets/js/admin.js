@@ -1,5 +1,5 @@
 /* =========================================================================
-   admin.js — Panel de administración (Reformas Madrid).
+   admin.js — Panel de administración (Profesionales Madrid).
    Auth real, CRUD de negocios con taxonomía estructurada (categorías,
    distrito→barrio, metro), import por URL con override, y gestión de
    taxonomía (categorías + estaciones de metro).
@@ -88,7 +88,7 @@
         <td>${esc(b.zone) || '<span class="muted">—</span>'}</td>
         <td>${esc((b.categories || []).filter(c => !c.parent_id).map(c => c.name).join(', ')) || `${(b.categories || []).length} <span class="muted">serv.</span>`}</td>
         <td>${bizReviews(b)}</td>
-        <td><div class="t-pills">${b.homePos ? `<span class="pill pill-home" title="Posición en la portada">⌂ Nº ${b.homePos}</span>` : ''}${b.featured ? '<span class="pill pill-gold">★ Destacado</span>' : ''}${!b.homePos && !b.featured ? '<span class="muted">—</span>' : ''}</div></td>
+        <td><div class="t-pills">${b.homePos ? `<span class="pill pill-home" title="Posición en la portada">⌂ Nº ${b.homePos}</span>` : ''}${b.featured ? '<span class="pill pill-gold">★ Patrocinado</span>' : ''}${b.claimed ? '<span class="pill pill-ok">✓ Verificada</span>' : ''}${!b.homePos && !b.featured && !b.claimed ? '<span class="muted">—</span>' : ''}</div></td>
         <td><div class="row-actions">
           <button class="icon-btn home ${b.homePos ? 'on' : ''}" data-act="home" data-id="${attr(b.id)}" title="${b.homePos ? 'Quitar de la portada' : 'Añadir a la portada (al final)'}">${IC.home}</button>
           <button class="icon-btn gold ${b.featured ? 'on' : ''}" data-act="feature" data-id="${attr(b.id)}" title="Destacar">${IC.star}</button>
@@ -183,6 +183,8 @@
     $('#drawerTitle').textContent = b ? 'Editar negocio' : 'Nuevo negocio';
     ['f-name', 'f-contact', 'f-team', 'f-area', 'f-address', 'f-about', 'f-phone', 'f-email', 'f-website', 'f-rating', 'f-reviews'].forEach(k => { $('#' + k).value = ''; });
     $('#f-featured').checked = false;
+    $('#f-claimed').checked = false;
+    $('#f-badge-wrap').classList.add('hidden');
     $('#f-home').checked = !!(b && b.homePos);
     $('#f-district').value = '';
     $$('#f-hours [data-day]').forEach(i => { i.value = ''; });
@@ -199,6 +201,8 @@
       $('#f-phone').value = b.phone; $('#f-email').value = b.email; $('#f-website').value = b.website;
       $('#f-rating').value = b.rating != null ? b.rating : ''; $('#f-reviews').value = b.reviews || '';
       $('#f-featured').checked = !!b.featured;
+      $('#f-claimed').checked = !!b.claimed;
+      if (b.claimed) { $('#f-badge').value = badgeCode(b); $('#f-badge-wrap').classList.remove('hidden'); }
       formPhoto = b.photo || null; formLogo = b.logo || null; formPhotos = Array.isArray(b.photos) ? b.photos.slice() : [];
       (b.categories || []).forEach(c => { const el = $(`#f-categories input[data-cat="${c.id}"]`); if (el) el.checked = true; });
       (b.metros || []).forEach(m => { const el = $(`#f-metros input[data-metro="${m.id}"]`); if (el) el.checked = true; });
@@ -211,6 +215,27 @@
     $('#drawerBackdrop').classList.add('open');
     $('#drawer').querySelector('.drawer-scroll').scrollTop = 0;
     setTimeout(() => $('#f-name').focus({ preventScroll: true }), 60);
+  }
+  /* Código de la insignia «Verificado» para la web del negocio (enlaza a su ficha). */
+  function badgeCode(b) {
+    const o = location.origin;
+    const t = String(b.name || '').replace(/"/g, '&quot;');
+    return `<a href="${o}/negocio/${b.id}" title="${t} en Profesionales Madrid"><img src="${o}/insignia/${encodeURIComponent(b.id)}.svg" alt="Verificado en Profesionales Madrid" width="236" height="64"></a>`;
+  }
+  /* «Crear ficha» desde una solicitud de alta: abre el editor con sus datos. */
+  async function openDrawerFromLead(l) {
+    await openDrawer(null);
+    const p = l.payload || {};
+    $('#f-name').value = p.negocio || '';
+    $('#f-phone').value = l.phone || '';
+    $('#f-website').value = p.web || '';
+    $('#f-contact').value = l.name || '';
+    $('#f-area').value = p.zona || '';
+    $('#f-claimed').checked = true;
+    const cat = categoriesFlat.find(c => c.name === p.oficio);
+    if (cat) { const el = $(`#f-categories input[data-cat="${cat.id}"]`); if (el) el.checked = true; }
+    setPreview(); setLogoPreview();
+    toast('Revisa los datos, elige el distrito y guarda');
   }
   function closeDrawer() {
     $('#drawer').classList.remove('open'); $('#drawer').setAttribute('aria-hidden', 'true');
@@ -228,7 +253,8 @@
       phone: $('#f-phone').value, email: $('#f-email').value, website: $('#f-website').value,
       rating: isNaN(rating) ? null : Math.min(5, Math.max(0, rating)),
       reviews: parseInt($('#f-reviews').value, 10) || 0,
-      featured: $('#f-featured').checked, photo: formPhoto, logo: formLogo, photos: formPhotos, hours, social,
+      featured: $('#f-featured').checked, claimed: $('#f-claimed').checked,
+      photo: formPhoto, logo: formLogo, photos: formPhotos, hours, social,
       districtId: $('#f-district').value ? +$('#f-district').value : null,
       neighborhoodId: $('#f-barrio').value ? +$('#f-barrio').value : null,
       categoryIds: $$('#f-categories input:checked').map(i => +i.dataset.cat),
@@ -254,6 +280,10 @@
 
   function bindDrawer() {
     $('#drawerSave').addEventListener('click', save);
+    $('#f-badge-copy').addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText($('#f-badge').value); toast('Código copiado'); }
+      catch { $('#f-badge').select(); document.execCommand('copy'); toast('Código copiado'); }
+    });
     $('#drawerCancel').addEventListener('click', closeDrawer);
     $('#drawerClose').addEventListener('click', closeDrawer);
     $('#drawerBackdrop').addEventListener('click', closeDrawer);
@@ -330,7 +360,7 @@
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url; a.download = 'reformas-madrid.json';
+      a.href = url; a.download = 'profesionales-madrid.json';
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       toast('Datos exportados');
@@ -640,8 +670,14 @@
   }
 
   /* ------------------------------- Leads -------------------------------- */
-  let leadStatus = '';
+  let leadStatus = '', leadKind = '';
+  const leadMap = new Map();
   const LEAD_LABEL = { new: 'Nuevo', contacted: 'Contactado', archived: 'Archivado' };
+  const KIND_LABEL = { quote: 'Presupuesto', claim: 'Reclamación de ficha', alta: 'Alta de negocio', historia: 'Historia', contacto: 'Contacto' };
+  const PAYLOAD_LABEL = {
+    cargo: 'Relación', descripcion: 'Descripción', servicios: 'Servicios', zonas: 'Zonas', horario: 'Horario',
+    web: 'Web', titular: 'Titular confirmado', negocio: 'Negocio', oficio: 'Servicio', zona: 'Zona', porque: 'Por qué', motivo: 'Motivo',
+  };
   function leadTimeAgo(ts) {
     const s = Math.max(0, Math.floor(Date.now() / 1000) - (Number(ts) || 0));
     if (s < 60) return 'ahora';
@@ -668,18 +704,25 @@
       l.businessName ? `Negocio: <a href="/negocio/${attr(l.business_id)}" target="_blank" rel="noopener">${esc(l.businessName)}</a>` : '',
       l.context ? esc(l.context) : '',
     ].filter(Boolean).join(' · ');
-    return `<div class="lead-item lead-status-${attr(l.status)}" data-id="${attr(l.id)}">
+    const pl = l.payload && Object.keys(l.payload).length
+      ? `<dl class="lead-payload">${Object.entries(l.payload).map(([k, v]) => `<dt>${esc(PAYLOAD_LABEL[k] || k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>` : '';
+    const kind = l.kind || 'quote';
+    return `<div class="lead-item lead-status-${attr(l.status)} lead-kind-${attr(kind)}" data-id="${attr(l.id)}">
         <div class="lead-item-main">
           <div class="lead-item-top">
+            <span class="lead-kind">${esc(KIND_LABEL[kind] || kind)}</span>
             <span class="lead-name">${esc(l.name)}</span>
             <span class="lead-badge lead-badge-${attr(l.status)}">${esc(LEAD_LABEL[l.status] || l.status)}</span>
             <span class="lead-time">${esc(leadTimeAgo(l.created_at))}</span>
           </div>
           ${contact ? `<div class="lead-contact">${contact}</div>` : ''}
           ${l.message ? `<p class="lead-msg">${esc(l.message)}</p>` : ''}
+          ${pl}
           ${meta ? `<div class="lead-meta">${meta}</div>` : ''}
         </div>
         <div class="lead-item-actions">
+          ${kind === 'claim' && l.status !== 'contacted' ? `<button class="btn btn-primary btn-sm" data-act="approve" title="Tras llamar al teléfono de la ficha">${IC.check} Aprobar y publicar</button>` : ''}
+          ${kind === 'alta' ? `<button class="btn btn-primary btn-sm" data-act="create">Crear ficha</button>` : ''}
           ${l.status !== 'contacted' ? `<button class="btn btn-soft btn-sm" data-act="contacted">${IC.check} Contactado</button>` : ''}
           ${l.status !== 'archived' ? `<button class="btn btn-ghost btn-sm" data-act="archived">Archivar</button>` : ''}
           ${l.status !== 'new' ? `<button class="btn btn-ghost btn-sm" data-act="new">Reabrir</button>` : ''}
@@ -690,17 +733,19 @@
   async function renderLeads() {
     const list = $('#leadList');
     let d;
-    try { d = await api.leads(leadStatus); }
+    try { d = await api.leads(leadStatus, leadKind); }
     catch (e) { if (e.status === 401) return location.replace('login.html'); list.innerHTML = '<p class="muted">No se pudieron cargar los leads.</p>'; return; }
     const c = d.counts || { new: 0, contacted: 0, archived: 0, total: 0 };
     updateLeadBadge(c);
+    $$('[data-kind-count]').forEach(el => { const n = (c.kinds || {})[el.dataset.kindCount] || 0; el.textContent = n ? n : ''; });
+    leadMap.clear(); (d.leads || []).forEach(l => leadMap.set(l.id, l));
     $('#leadCounts').innerHTML =
       statCard('teal', IC.card, c.total, 'Total') +
       statCard('blue', IC.users, c.new, 'Nuevos') +
       statCard('gold', IC.check, c.contacted, 'Contactados') +
       statCard('pink', IC.trash, c.archived, 'Archivados');
     if (!d.leads.length) {
-      list.innerHTML = '<p class="muted" style="padding:10px 2px">' + (leadStatus ? 'No hay leads en este estado.' : 'No hay leads todavía. Cuando un visitante pida presupuesto, aparecerá aquí.') + '</p>';
+      list.innerHTML = '<p class="muted" style="padding:10px 2px">' + (leadStatus || leadKind ? 'No hay leads con este filtro.' : 'No hay leads todavía. Cuando un visitante pida presupuesto o un negocio reclame su ficha, aparecerá aquí.') + '</p>';
       return;
     }
     list.innerHTML = d.leads.map(leadCard).join('');
@@ -717,16 +762,222 @@
       });
       renderLeads();
     });
+    $('#leadKindFilter').addEventListener('click', e => {
+      const b = e.target.closest('[data-kind]'); if (!b) return;
+      leadKind = b.dataset.kind || '';
+      $$('#leadKindFilter [data-kind]').forEach(x => {
+        const on = x === b;
+        x.classList.toggle('is-active', on);
+        x.classList.toggle('btn-soft', on);
+        x.classList.toggle('btn-ghost', !on);
+      });
+      renderLeads();
+    });
     $('#leadList').addEventListener('click', async e => {
       const btn = e.target.closest('[data-act]'); if (!btn) return;
       const item = btn.closest('.lead-item'); const id = item && item.dataset.id; if (!id) return;
       const act = btn.dataset.act;
+      if (act === 'create') { const l = leadMap.get(id); if (l) openDrawerFromLead(l); return; }
       try {
-        if (act === 'delete') { if (!confirm('¿Eliminar este lead? No se puede deshacer.')) return; await api.deleteLead(id); toast('Lead eliminado'); }
+        if (act === 'approve') {
+          if (!confirm('¿Has llamado al teléfono de la ficha y has confirmado que es el titular? Se publicará su descripción y la ficha quedará verificada.')) return;
+          await api.approveClaim(id); toast('Ficha verificada y publicada');
+        }
+        else if (act === 'delete') { if (!confirm('¿Eliminar este lead? No se puede deshacer.')) return; await api.deleteLead(id); toast('Lead eliminado'); }
         else { await api.setLeadStatus(id, act); toast('Lead actualizado'); }
         renderLeads();
       } catch (err) { toast(err.status === 401 ? 'Sesión expirada' : 'No se pudo actualizar', 'err'); }
     });
+  }
+
+  /* ------------------------------ Historias ------------------------------ */
+  /* Editor de «Historias de profesionales»: negocio, título, resumen, texto en
+     Markdown (con vista previa del servidor), portada y galería, consentimiento
+     y patrocinio. Publicar exige consentimiento + resumen + 300 palabras. */
+  let stBiz = null, stCover = null, stPhotos = [], stTimer = null;
+  const wordsOf = t => String(t || '').split(/\s+/).filter(Boolean).length;
+  async function renderStories() {
+    const list = $('#storyList');
+    let stories;
+    try { stories = await api.stories(); }
+    catch (e) { if (e.status === 401) return location.replace('login.html'); list.innerHTML = '<p class="muted">No se pudieron cargar las historias.</p>'; return; }
+    if (!stories.length) { list.innerHTML = '<p class="muted" style="padding:10px 2px">Aún no hay historias. Pulsa «Nueva historia» para escribir la primera.</p>'; return; }
+    list.innerHTML = `<table class="admin-table"><thead><tr><th>Título</th><th>Negocio</th><th>Estado</th><th>Palabras</th><th>Actualizada</th><th></th></tr></thead><tbody>${stories.map(st => `
+      <tr data-id="${attr(st.id)}">
+        <td><b>${esc(st.title)}</b>${st.sponsored ? ' <span class="pill pill-gold">Patrocinado</span>' : ''}</td>
+        <td>${st.businessName ? esc(st.businessName) + (st.businessClaimed ? ' <span class="pill pill-ok">✓</span>' : '') : '<span class="muted">—</span>'}</td>
+        <td>${st.status === 'published' ? '<span class="pill pill-ok">Publicada</span>' : '<span class="pill">Borrador</span>'}</td>
+        <td>${fmt(wordsOf(st.body))}</td>
+        <td class="muted">${st.updated_at ? new Date(st.updated_at * 1000).toLocaleDateString('es-ES') : ''}</td>
+        <td><div class="row-actions">
+          ${st.status === 'published' ? `<a class="icon-btn" href="/historias/${attr(st.id)}" target="_blank" rel="noopener" title="Ver">${IC.eye}</a>` : ''}
+          <button class="icon-btn" data-act="edit" title="Editar">${IC.edit}</button>
+          <button class="icon-btn danger" data-act="delete" title="Eliminar">${IC.trash}</button>
+        </div></td>
+      </tr>`).join('')}</tbody></table>`;
+  }
+  function stSetBiz(b) {
+    stBiz = b ? { id: b.id, name: b.name, claimed: !!b.claimed, zone: b.zone || '' } : null;
+    const sel = $('#st-biz-sel');
+    if (stBiz) {
+      sel.innerHTML = `<b>${esc(stBiz.name)}</b> <span class="muted">${esc(stBiz.zone)}</span> ${stBiz.claimed ? '<span class="pill pill-ok">✓ Verificada</span>' : '<span class="pill pill-gold">Sin verificar</span>'} <button type="button" class="btn btn-ghost btn-sm" id="st-biz-clear">Cambiar</button>`;
+      sel.classList.remove('hidden'); $('#st-biz-q').classList.add('hidden');
+    } else {
+      sel.classList.add('hidden'); sel.innerHTML = ''; $('#st-biz-q').classList.remove('hidden'); $('#st-biz-q').value = '';
+    }
+    stWarn();
+  }
+  function stWarn() {
+    const w = $('#st-warn');
+    const msgs = [];
+    if (stBiz && !stBiz.claimed) msgs.push('El negocio aún no está verificado. Antes de publicar, verifica la ficha (la entrevista sirve como verificación).');
+    if ($('#st-status').value === 'published' && !$('#st-consent').checked) msgs.push('Para publicar hace falta el consentimiento del negocio.');
+    w.innerHTML = msgs.map(esc).join('<br>');
+    w.classList.toggle('hidden', !msgs.length);
+  }
+  function stRenderPhotos() {
+    $('#st-photos').innerHTML = stPhotos.map((url, i) => `<div class="pg-thumb"><img src="${attr(url)}" alt="" /><button type="button" class="pg-remove" data-i="${i}" title="Quitar">×</button></div>`).join('')
+      + '<button type="button" class="pg-add-tile" id="st-photos-add" title="Añadir fotos">+</button>';
+  }
+  function stSetCover(url) {
+    stCover = url || null;
+    const img = $('#st-cover-preview');
+    if (stCover) { img.src = stCover; img.classList.remove('hidden'); } else { img.removeAttribute('src'); img.classList.add('hidden'); }
+  }
+  function stCounts() {
+    $('#st-words').textContent = fmt(wordsOf($('#st-body').value));
+    $('#st-excerpt-n').textContent = $('#st-excerpt').value.length;
+  }
+  async function openStory(id) {
+    let st = null;
+    if (id) { try { st = await api.getStory(id); } catch { toast('No se pudo abrir la historia', 'err'); return; } }
+    $('#storyModalTitle').textContent = st ? 'Editar historia' : 'Nueva historia';
+    $('#st-id').value = st ? st.id : '';
+    $('#st-title').value = st ? st.title : '';
+    $('#st-slug').value = st ? st.id : '';
+    $('#st-slug').disabled = !!st;            // la URL no cambia una vez creada (no romper enlaces)
+    $('#st-excerpt').value = st ? st.excerpt : '';
+    $('#st-body').value = st ? st.body : '';
+    $('#st-consent').checked = !!(st && st.consent_at);
+    $('#st-sponsored').checked = !!(st && st.sponsored);
+    $('#st-status').value = st ? st.status : 'draft';
+    stPhotos = st && Array.isArray(st.photos) ? st.photos.slice() : [];
+    stSetCover(st ? st.cover : null);
+    stRenderPhotos();
+    $('#st-preview').classList.add('hidden'); $('#st-preview').innerHTML = '';
+    $('#st-error').classList.add('hidden');
+    $('#st-biz-results').classList.add('hidden');
+    stSetBiz(null);
+    if (st && st.business_id) {
+      try { stSetBiz(await api.getBusiness(st.business_id)); } catch { /* negocio borrado */ }
+    }
+    $('#st-delete').classList.toggle('hidden', !st);
+    const view = $('#st-view');
+    view.classList.toggle('hidden', !(st && st.status === 'published'));
+    if (st) view.href = '/historias/' + st.id;
+    stCounts(); stWarn();
+    $('#storyBackdrop').classList.add('open');
+    setTimeout(() => $('#st-title').focus({ preventScroll: true }), 60);
+  }
+  function closeStory() { $('#storyBackdrop').classList.remove('open'); }
+  async function saveStory() {
+    const id = $('#st-id').value;
+    const data = {
+      business_id: stBiz ? stBiz.id : null,
+      title: $('#st-title').value.trim(), excerpt: $('#st-excerpt').value.trim(), body: $('#st-body').value,
+      cover: stCover, photos: stPhotos, status: $('#st-status').value,
+      consent: $('#st-consent').checked, sponsored: $('#st-sponsored').checked,
+    };
+    if (!id && $('#st-slug').value.trim()) data.slug = $('#st-slug').value.trim();
+    const errEl = $('#st-error');
+    errEl.classList.add('hidden');
+    $('#st-save').disabled = true;
+    try {
+      if (id) await api.updateStory(id, data); else await api.createStory(data);
+      closeStory(); renderStories();
+      toast(data.status === 'published' ? 'Historia publicada' : 'Borrador guardado');
+    } catch (e) {
+      errEl.textContent = e.message || 'No se pudo guardar'; errEl.classList.remove('hidden');
+    } finally { $('#st-save').disabled = false; }
+  }
+  function bindStories() {
+    $('#storyNew').addEventListener('click', () => openStory(null));
+    $('#storyClose').addEventListener('click', closeStory);
+    $('#st-cancel').addEventListener('click', closeStory);
+    $('#st-save').addEventListener('click', saveStory);
+    $('#storyBackdrop').addEventListener('click', e => { if (e.target.id === 'storyBackdrop') closeStory(); });
+    $('#storyList').addEventListener('click', async e => {
+      const btn = e.target.closest('[data-act]'); if (!btn) return;
+      const id = btn.closest('tr').dataset.id;
+      if (btn.dataset.act === 'edit') openStory(id);
+      if (btn.dataset.act === 'delete') {
+        if (!confirm('¿Eliminar esta historia? Si estaba publicada, su URL dejará de existir.')) return;
+        try { await api.deleteStory(id); toast('Historia eliminada'); renderStories(); } catch { toast('No se pudo eliminar', 'err'); }
+      }
+    });
+    $('#st-delete').addEventListener('click', async () => {
+      const id = $('#st-id').value; if (!id) return;
+      if (!confirm('¿Eliminar esta historia? Si estaba publicada, su URL dejará de existir.')) return;
+      try { await api.deleteStory(id); closeStory(); toast('Historia eliminada'); renderStories(); } catch { toast('No se pudo eliminar', 'err'); }
+    });
+    // Buscador de negocio
+    $('#st-biz-q').addEventListener('input', e => {
+      clearTimeout(stTimer);
+      const q = e.target.value.trim();
+      const box = $('#st-biz-results');
+      if (q.length < 2) { box.classList.add('hidden'); return; }
+      stTimer = setTimeout(async () => {
+        try {
+          const r = await api.listBusinessesPage({ q, pageSize: 8 });
+          box.innerHTML = (r.businesses || []).map(b => `<button type="button" data-id="${attr(b.id)}"><b>${esc(b.name)}</b><span>${esc(b.zone || '')}${b.claimed ? ' · ✓' : ''}</span></button>`).join('') || '<p class="muted">Sin resultados</p>';
+          box._list = r.businesses || [];
+          box.classList.remove('hidden');
+        } catch { box.classList.add('hidden'); }
+      }, 250);
+    });
+    $('#st-biz-results').addEventListener('click', e => {
+      const b = e.target.closest('[data-id]'); if (!b) return;
+      const box = $('#st-biz-results');
+      stSetBiz((box._list || []).find(x => x.id === b.dataset.id));
+      box.classList.add('hidden');
+    });
+    $('#st-biz-sel').addEventListener('click', e => { if (e.target.id === 'st-biz-clear') stSetBiz(null); });
+    // Contadores y avisos
+    $('#st-body').addEventListener('input', stCounts);
+    $('#st-excerpt').addEventListener('input', stCounts);
+    $('#st-status').addEventListener('change', stWarn);
+    $('#st-consent').addEventListener('change', stWarn);
+    // Vista previa (render del servidor = igual que en la web)
+    $('#st-preview-btn').addEventListener('click', async () => {
+      const box = $('#st-preview');
+      try {
+        const r = await api.storyPreview({ body: $('#st-body').value, business_id: stBiz ? stBiz.id : null, sponsored: $('#st-sponsored').checked });
+        box.innerHTML = r.html || '<p class="muted">Sin texto.</p>'; box.classList.remove('hidden');
+      } catch { toast('No se pudo generar la vista previa', 'err'); }
+    });
+    // Portada y galería (se reducen en el navegador antes de subir)
+    $('#st-cover-btn').addEventListener('click', () => $('#st-cover-input').click());
+    $('#st-cover-clear').addEventListener('click', () => stSetCover(null));
+    $('#st-cover-input').addEventListener('change', async e => {
+      const file = e.target.files[0]; if (!file) return;
+      $('#st-cover-btn').disabled = true;
+      try { const r = await api.upload(await resizeImage(file, 1600)); stSetCover(r.url); toast('Portada subida'); }
+      catch (err) { toast(err.status === 401 ? 'Sesión expirada' : 'No se pudo subir la portada', 'err'); }
+      finally { $('#st-cover-btn').disabled = false; e.target.value = ''; }
+    });
+    $('#st-photos').addEventListener('click', e => {
+      if (e.target.closest('#st-photos-add')) { $('#st-photos-input').click(); return; }
+      const rm = e.target.closest('.pg-remove');
+      if (rm) { stPhotos.splice(+rm.dataset.i, 1); stRenderPhotos(); }
+    });
+    $('#st-photos-input').addEventListener('change', async e => {
+      for (const file of Array.from(e.target.files || [])) {
+        try { const r = await api.upload(await resizeImage(file, 1400)); stPhotos.push(r.url); stRenderPhotos(); }
+        catch (err) { toast(err.status === 401 ? 'Sesión expirada' : 'No se pudo subir una foto', 'err'); }
+      }
+      e.target.value = '';
+    });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#storyBackdrop').classList.contains('open')) closeStory(); });
   }
 
   /* ----------------------- Orden / Clasamentos -------------------------- */
@@ -1089,7 +1340,9 @@
     $('#view-taxonomia').classList.toggle('hidden', v !== 'taxonomia');
     $('#view-orden').classList.toggle('hidden', v !== 'orden');
     $('#view-stats').classList.toggle('hidden', v !== 'stats');
+    $('#view-historias').classList.toggle('hidden', v !== 'historias');
     if (v === 'leads') renderLeads();
+    if (v === 'historias') renderStories();
     if (v === 'stats') renderStats();
     if (v === 'taxonomia') renderTaxonomy();
     if (v === 'orden') ordEnter();
@@ -1105,7 +1358,7 @@
     try { await loadTaxonomy(); } catch { toast('No se pudo cargar la taxonomía', 'err'); }
     fillDistrictSelects(); buildCategoryChecklist(); buildMetroChecklist(); fillBizCatFilter();
 
-    bindBusinesses(); bindDrawer(); bindStats(); bindImport(); bindTaxonomy(); bindOrden(); bindLeads();
+    bindBusinesses(); bindDrawer(); bindStats(); bindImport(); bindTaxonomy(); bindOrden(); bindLeads(); bindStories();
     $$('.admin-nav-btn').forEach(b => b.addEventListener('click', () => switchView(b.dataset.view)));
     $$('[data-goview]').forEach(el => el.addEventListener('click', e => { e.preventDefault(); switchView(el.dataset.goview); }));
     // Local, fără login (me.noLogin) → ascundem „salir": nu are unde să te ducă.

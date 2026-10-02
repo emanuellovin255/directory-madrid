@@ -64,6 +64,8 @@ CREATE TABLE IF NOT EXISTS businesses (
   area            TEXT,          -- zona/urbanización tal cual (ej. «El Montecillo»)
   contact_name    TEXT,          -- persona de contacto / responsable (opcional)
   team_size       INTEGER,       -- nº de miembros del equipo (opcional)
+  claimed         INTEGER DEFAULT 0,  -- 1 = ficha reclamada y verificada (✓ Verificado)
+  claimed_at      BIGINT,        -- fecha de la verificación (unix seconds)
   created_at      BIGINT
 );
 
@@ -85,4 +87,22 @@ CREATE TABLE IF NOT EXISTS placements (
   business_id TEXT NOT NULL,
   position    INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (context, business_id)
+);
+
+-- Historias de profesionales (artículos enlazados a una ficha; solo las
+-- publicadas son públicas). Ver server/db.js (stories).
+CREATE TABLE IF NOT EXISTS stories (
+  id           TEXT PRIMARY KEY,        -- slug (/historias/<id>)
+  business_id  TEXT,
+  title        TEXT NOT NULL,
+  excerpt      TEXT,
+  body         TEXT,                    -- Markdown simple
+  cover        TEXT,
+  photos       TEXT,                    -- JSON array de URLs
+  status       TEXT NOT NULL DEFAULT 'draft',   -- draft | published
+  sponsored    INTEGER DEFAULT 0,       -- 1 = contenido patrocinado
+  consent_at   BIGINT,                  -- consentimiento del negocio
+  published_at BIGINT,
+  updated_at   BIGINT,
+  created_at   BIGINT
 );

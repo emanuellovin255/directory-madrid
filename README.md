@@ -1,6 +1,6 @@
-# Reformas Madrid
+# Profesionales Madrid (profesionalesmadrid.es)
 
-Un **director web SEO-first pentru contractori și servicii pentru casă din Madrid** — fontaneros, electricistas, cerrajeros, climatización și reformas. Modern, profesional și **complet full-stack**, cu **pagini generate pe server (SSR)** optimizate pentru Google.
+Un **director web SEO-first pentru profesioniști din Comunitatea Madrid**: reformas, fontaneros, electricistas, climatización, cerrajeros, control de plagas, mudanzas și talleres. E **lead magnetul** pentru Listo247 (gestionarea fișei Google): firmele apar gratis, își revendică fișa și primesc oferta Listo247. Modern, profesional și **complet full-stack**, cu **pagini generate pe server (SSR)** optimizate pentru Google.
 
 **Stack:** Node.js + Express + **SQLite** (`node:sqlite`, built-in — fără dependențe native). Conținut în spaniolă.
 
@@ -38,7 +38,33 @@ Toate paginile de listare sunt **randate pe server** cu `<title>`/meta/canonical
 | `/zona/:distrito[/:barrio]` | `/zona/salamanca` | Toate serviciile dintr-o zonă |
 | `/metro` · `/metro/:estacion` | `/metro/sol` | Căutare / hub pe stații de metrou |
 | `/negocio/:id` | `/negocio/aquafix-fontaneros-madrid` | Fișă proprie, indexabilă, per firmă |
-| `/buscar?q=…` · `/sitemap.xml` · `/robots.txt` | — | Căutare + sitemap generat automat |
+| `/buscar?q=…` · `/sitemap.xml` · `/robots.txt` | — | Căutare (noindex) + sitemap index pe tipuri + robots |
+| `/profesionales` · `/profesionales/:categoria` | `/profesionales/fontaneros` | Pentru firme: alta gratis, caută-ți fișa, poveste gratuită, Listo247 |
+| `/precios` · `/precios/:slug` | `/precios/precio-fontanero-madrid` | Prețuri orientative (12 pagini) |
+| `/guias` · `/guias/:slug` | `/guias/licencia-de-obra-madrid` | Ghiduri pentru clienți (8) |
+| `/historias` · `/historias/:slug` | — | Povești despre firme (lead magnet 2), scrise din admin |
+| `/sobre-nosotros` · `/contacto` | — | Cum funcționează directorul · formular contact (corectare/ștergere fișă) |
+| `/insignia/:id.svg` | — | Sigiliul „Verificado” pentru site-ul firmei (doar fișe verificate) |
+
+### Reguli SEO (important)
+
+- **Fișele de firmă** au `noindex,follow` până când au conținut propriu: revendicate și aprobate, sau cu descriere de minimum 150 de caractere (`DB.isIndexableBusiness`). Doar acestea intră în `sitemap-negocios-N.xml`.
+- **Listările** (categorie × zonă / district / barrio / metro) sunt indexabile de la `MIN_LISTING` firme (implicit 3). Chipurile de linkuri interne arată doar paginile care trec pragul.
+- **Sitemap-ul** e un index cu un sub-sitemap pe tip de pagină: `principales`, `servicios`, `distritos`, `municipios`, `barrios`, `metro`, `historias`, `negocios-N`. Cu `SITEMAP_TYPES` alegi ce grupuri publici (lansare în valuri).
+- **Clienții nu văd telefonul nostru**, doar formulare. `PRO_PHONE` apare numai în secțiunile pentru profesioniști.
+- Fișele verificate apar primele în ordinea automată (pozițiile fixate din admin au prioritate). „Destacado” se afișează ca **Patrocinado**.
+
+### Fluxul de revendicare
+
+Pe fiecare fișă nerevendicată apare blocul „¿Es tu negocio?”. Cererea ajunge în **admin → Leads → Reclamaciones**. Suni la telefonul din fișă ca s-o verifici, apoi apeși **„Aprobar y publicar”**: descrierea se publică, fișa primește ✓ și devine indexabilă. Codul insignei îl copiezi din editorul firmei. Ghidul de contactare a firmelor e în `docs/outreach.md`, iar procesul pentru povești în `docs/historias.md`.
+
+### Scripturi
+
+```bash
+node scripts/export-profiles.js --sin-verificar --min-resenas=20 > fichas.csv   # CSV cu URL-ul fiecărei fișe (pentru GHL)
+node scripts/enrich-from-web.js --limit=50              # simulare: adresă/orar/rețele din site-ul firmei
+node scripts/enrich-from-web.js --limit=50 --apply      # salvează
+```
 
 Căutarea din hero (serviciu + distrito + barrio + metrou) **rutează direct** la pagina SEO corespunzătoare.
 
@@ -122,6 +148,8 @@ ADMIN_PASSWORD=parola-ta-buna
 SESSION_SECRET=un-secret-lung-si-aleator   # node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 Fără `.env` → valori implicite (`admin` / `admin`), bune doar pentru test.
+
+Variabile noi (detalii în `.env.example` și `DEPLOY-VERCEL.md`): `SITE_URL`, `SITE_EMAIL`, `PRO_PHONE`, `MIN_LISTING`, `SITEMAP_TYPES`, `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `SUPABASE_BUCKET`.
 
 ## 🎨 Personalizare rapidă
 

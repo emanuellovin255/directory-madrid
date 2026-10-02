@@ -1,7 +1,7 @@
 {
-  "name": "reformas-madrid",
+  "name": "profesionales-madrid",
   "version": "2.0.0",
-  "description": "Reformas Madrid — directorio SEO de contractores y servicios para el hogar en Madrid (Node + Express + SQLite, SSR)",
+  "description": "Profesionales Madrid — directorio SEO de profesionales del hogar, reformas y talleres en Madrid (Node + Express + SQLite, SSR)",
   "type": "commonjs",
   "main": "server/server.js",
   "scripts": {

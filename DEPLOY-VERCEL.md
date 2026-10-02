@@ -1,4 +1,4 @@
-# Deploy „Reformas Madrid" (Directory) pe Vercel — ghid pas cu pas
+# Deploy „Profesionales Madrid" (profesionalesmadrid.es) pe Vercel — ghid pas cu pas
 
 > ⏳ **OPȚIONAL — pentru viitor.** Acum totul rulează **local** (dublu-click pe
 > `Pornește aplicațiile.command`), fără cloud, cu date permanente pe disc. Acest
@@ -75,6 +75,13 @@ Pe **vercel.com → proiectul tău → Settings → Environment Variables**, ada
 | `ADMIN_PASSWORD` | o parolă bună (nu lăsa `admin`) |
 | `SESSION_SECRET` | ceva lung/aleator — generează: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
 | `API_TOKEN` | **aceeași valoare** ca `DIRECTORY_API_TOKEN` din `prospectquest/.env.local` |
+| `SITE_URL` | `https://profesionalesmadrid.es` — domeniul canonic (canonical, sitemap, redirect 301 de pe *.vercel.app și www) |
+| `SITE_EMAIL` | emailul de contact din paginile legale (ex. `hola@profesionalesmadrid.es`, cu forwarding la registrar) |
+| `PRO_PHONE` | telefonul/WhatsApp afișat **doar** profesioniștilor (implicit `+34 663 291 101`) |
+| `MIN_LISTING` | pragul de indexare al listărilor (implicit `3`) |
+| `SITEMAP_TYPES` | valul de lansare: `principales,servicios,distritos,historias` (apoi adaugi `municipios`, `barrios`) |
+| `SUPABASE_URL` | URL-ul proiectului Supabase (Project Settings → API), pentru pozele din Storage |
+| `SUPABASE_SERVICE_KEY` | cheia `service_role` (Project Settings → API). Doar pe server, niciodată în frontend |
 
 > `API_TOKEN` e legătura CRM → Directory. Trebuie identic în ambele locuri, altfel
 > push-ul din CRM primește 401.
@@ -94,6 +101,37 @@ variabilele). Sau, la CLI: `vercel --prod`.
 
 La prima pornire cu `DATABASE_URL` setat, aplicația își creează singură tabelele
 și seed-ul (distritos, barrios, categorii) în Postgres.
+
+---
+
+## Pasul 3b — Datele: importul celor 12.5k firme în Supabase
+
+Firmele importate din CSV-urile GHL sunt doar în baza locală (`server/data.db`). Cu
+`DATABASE_URL` pus în `.env` local, rulează din nou importul (scrie direct în Postgres):
+
+```bash
+node scripts/import-leads.js "/cale/Contractors Madrid.zip" --dry-run
+node scripts/import-leads.js "/cale/Contractors Madrid.zip"
+```
+
+Verifică în Supabase (Table editor → businesses) că sunt ~12.544 de rânduri.
+
+---
+
+## Pasul 3c — Domeniul profesionalesmadrid.es + Search Console
+
+1. **Vercel → Settings → Domains → Add** `profesionalesmadrid.es` (principal) și `www.profesionalesmadrid.es`
+   (redirect spre principal). Pune în DNS-ul registrarului înregistrările pe care ți le arată Vercel.
+2. **Search Console** (același cont Google ca listo247.es) → *Añadir propiedad* → **Dominio** →
+   înregistrarea TXT în DNS → Verificar.
+3. *Sitemaps* → trimite `sitemap.xml`. E un index: GSC vede singur sub-sitemap-urile (principales,
+   servicios, distritos, historias…) și raportează indexarea pe fiecare.
+4. *Inspección de URLs* → cere indexare pentru: `/`, `/profesionales`, cele 8 categorii (`/fontaneros`…),
+   `/precios`, `/guias` și 5–10 pagini categorie×district (`/fontaneros/salamanca`…). Există o limită zilnică.
+5. **Bing Webmaster Tools** → importă proprietatea din Search Console.
+6. După 2–3 săptămâni, în *Páginas*: dacă servicios/distritos sunt majoritar indexate, adaugă
+   `municipios` în `SITEMAP_TYPES` (Redeploy), apoi `barrios`. Fișele de firmă intră singure pe
+   măsură ce le verifici (revendicare aprobată).
 
 ---
 

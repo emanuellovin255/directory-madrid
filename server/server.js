@@ -54,19 +54,59 @@ if (INSECURE_PROD) {
    Se poate reactiva punând ADMIN_LOGIN=1 în .env. */
 const LOCAL_OPEN_ADMIN = !IS_PROD && process.env.ADMIN_LOGIN !== '1';
 
+/* Dominio canónico (ej. https://profesionalesmadrid.es). Si está definido,
+   canonical/OG/JSON-LD/sitemap usan SIEMPRE este origen y cualquier otro host
+   (*.vercel.app, www…) redirige con 301. Vacío (local) = el host de la petición. */
+const SITE_URL = String(process.env.SITE_URL || '').trim().replace(/\/+$/, '');
+const SITE_HOST = (() => { try { return SITE_URL ? new URL(SITE_URL).host : ''; } catch { return ''; } })();
+// La redirección solo actúa en Vercel (o forzada con CANONICAL_REDIRECT=1 para
+// probarla): con SITE_URL en un .env local, localhost no debe saltar a producción.
+const CANONICAL_REDIRECT = !!SITE_HOST && (!!process.env.VERCEL || process.env.CANONICAL_REDIRECT === '1');
+
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, '..', 'uploads');
 
 /* Pe serverless (Vercel) discul e read-only și efemer → nu scriem fișiere:
    imaginile se stochează inline (data URL) în DB, care persistă în Postgres. */
 const SERVERLESS = !!process.env.VERCEL;
+
+/* Imágenes en Supabase Storage (bucket público) en vez de data URLs en la base:
+   con fotos de fichas e historias, el base64 inline inflaba el HTML y frenaba la
+   carga. Se activa con SUPABASE_URL + SUPABASE_SERVICE_KEY. */
+const SUPABASE_URL = String(process.env.SUPABASE_URL || '').trim().replace(/\/+$/, '');
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || '';
+const SUPABASE_BUCKET = process.env.SUPABASE_BUCKET || 'media';
+const USE_STORAGE = !!(SUPABASE_URL && SUPABASE_KEY);
+let storageBucketReady = false;
+async function storageUpload(buf, contentType, ext) {
+  const d = new Date();
+  const objPath = `uploads/${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${Date.now().toString(36)}-${crypto.randomBytes(5).toString('hex')}.${ext}`;
+  const auth = { Authorization: 'Bearer ' + SUPABASE_KEY, apikey: SUPABASE_KEY };
+  const put = () => fetch(`${SUPABASE_URL}/storage/v1/object/${SUPABASE_BUCKET}/${objPath}`, {
+    method: 'POST', body: buf,
+    headers: Object.assign({ 'Content-Type': contentType, 'cache-control': 'max-age=31536000', 'x-upsert': 'false' }, auth),
+  });
+  let r = await put();
+  if (!r.ok && !storageBucketReady && (r.status === 400 || r.status === 404)) {
+    // El bucket no existe todavía → se crea público una sola vez y se reintenta.
+    await fetch(`${SUPABASE_URL}/storage/v1/bucket`, {
+      method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, auth),
+      body: JSON.stringify({ id: SUPABASE_BUCKET, name: SUPABASE_BUCKET, public: true }),
+    }).catch(() => {});
+    r = await put();
+  }
+  if (!r.ok) throw new Error('Storage ' + r.status + ': ' + (await r.text()).slice(0, 200));
+  storageBucketReady = true;
+  return `${SUPABASE_URL}/storage/v1/object/public/${SUPABASE_BUCKET}/${objPath}`;
+}
 if (!SERVERLESS) { try { fs.mkdirSync(UPLOADS_DIR, { recursive: true }); } catch { /* ignoră */ } }
 
 /* Slug-uri rezervate care NU pot fi categorii (ar intra în conflict cu rutele). */
 const RESERVED_SLUGS = new Set([
   'api', 'uploads', 'assets', 'admin', 'login', 'admin.html', 'login.html', 'index.html',
   'negocio', 'zona', 'zonas', 'metro', 'buscar', 'sitemap.xml', 'robots.txt', 'favicon.ico',
-  'aviso-legal', 'privacidad', 'cookies', 'condiciones',
+  'aviso-legal', 'privacidad', 'cookies', 'condiciones', 'destacadas',
+  'profesionales', 'precios', 'guias', 'historias', 'insignia', 'sobre-nosotros', 'contacto',
 ]);
 function isReservedSlug(s) { return RESERVED_SLUGS.has(String(s || '').toLowerCase()); }
 
@@ -153,6 +193,20 @@ app.use((req, res, next) => {
   next();
 });
 
+/* Host canónico: GET/HEAD desde otro host → 301 a SITE_URL (misma ruta y query).
+   /api/* queda fuera (el push del CRM con x-api-token puede usar la URL de
+   Vercel); lo que se sirva desde un host no canónico lleva X-Robots-Tag: noindex. */
+if (CANONICAL_REDIRECT) {
+  app.use((req, res, next) => {
+    if (req.get('host') === SITE_HOST) return next();
+    if ((req.method === 'GET' || req.method === 'HEAD') && !req.path.startsWith('/api/')) {
+      return res.redirect(301, SITE_URL + req.originalUrl);
+    }
+    res.setHeader('X-Robots-Tag', 'noindex');
+    next();
+  });
+}
+
 /* Așteaptă bootstrap-ul (hidratare Postgres + seed) înainte de orice cerere.
    Dacă baza nu răspunde: 503 (nu date demo) și reîncercare la cererea următoare. */
 app.use((req, res, next) => {
@@ -211,7 +265,7 @@ function requireAuthOrToken(req, res, next) {
   return res.status(401).json({ error: 'No autorizado' });
 }
 const ok = (res, data) => res.json(data);
-function ctx(req) { return { origin: req.protocol + '://' + req.get('host'), path: req.path }; }
+function ctx(req) { return { origin: SITE_URL || (req.protocol + '://' + req.get('host')), path: req.path }; }
 function sendHtml(res, html, status) { res.status(status || 200).type('html').send(html); }
 
 /* Rate-limiter simplu, in-memory (per-instanță). Suficient pentru a încetini
@@ -396,14 +450,18 @@ app.post('/api/import', requireAuth, async (req, res) => {
 });
 
 /* ------------------------------ Upload -------------------------------- */
-app.post('/api/upload', requireAuth, (req, res) => {
+app.post('/api/upload', requireAuth, async (req, res) => {
   const dataUrl = req.body && req.body.dataUrl;
   const m = /^data:(image\/(png|jpe?g|webp|gif));base64,(.+)$/.exec(dataUrl || '');
   if (!m) return res.status(400).json({ error: 'Imagen no válida' });
   const ext = m[2] === 'jpeg' ? 'jpg' : m[2];
   const buf = Buffer.from(m[3], 'base64');
-  const cap = SERVERLESS ? 1.5 * 1024 * 1024 : 3 * 1024 * 1024;
-  if (buf.length > cap) return res.status(413).json({ error: `Imagen demasiado grande (máx ${SERVERLESS ? '1.5' : '3'}MB)` });
+  const cap = SERVERLESS && !USE_STORAGE ? 1.5 * 1024 * 1024 : 3 * 1024 * 1024;
+  if (buf.length > cap) return res.status(413).json({ error: `Imagen demasiado grande (máx ${cap === 3 * 1024 * 1024 ? '3' : '1.5'}MB)` });
+  if (USE_STORAGE) {
+    try { return ok(res, { url: await storageUpload(buf, m[1] === 'image/jpg' ? 'image/jpeg' : m[1], ext) }); }
+    catch (e) { console.error('storage upload error:', e.message); return res.status(502).json({ error: 'No se pudo subir la imagen al almacenamiento' }); }
+  }
   // Serverless: fără disc → returnăm data URL-ul; se stochează inline în DB.
   if (SERVERLESS) return ok(res, { url: dataUrl });
   const name = Date.now().toString(36) + '-' + crypto.randomBytes(4).toString('hex') + '.' + ext;
@@ -442,21 +500,52 @@ app.get('/api/stats', requireAuth, (req, res) => ok(res, DB.getStats()));
 app.post('/api/analytics/reset', requireAuth, (req, res) => { DB.clearEvents(); seedIfEmpty(); ok(res, DB.getStats()); });
 
 /* ------------------------------- Leads -------------------------------- */
-/* Cerere de presupuesto trimisă de un vizitator — PUBLIC (fără auth). */
+/* Formulare publice (fără auth): presupuesto de un cliente (`quote`, implicit),
+   reclamar ficha (`claim`), alta de negocio (`alta`), pedir una historia
+   (`historia`) y contacto (`contacto`). Los campos extra van en `payload`. */
+const MIN_CLAIM_DESC = DB.MIN_ABOUT;   // la descripción hace la ficha indexable al aprobarla
+function leadError(kind, body, p, biz) {
+  const name = String(body.name || '').trim();
+  const phone = String(body.phone || '').trim();
+  const email = String(body.email || '').trim();
+  if (name.length < 2) return 'Indica tu nombre.';
+  if (kind === 'claim') {
+    if (!biz) return 'No encontramos la ficha que quieres reclamar.';
+    if (biz.claimed) return 'Esta ficha ya está verificada. Si eres el titular, escríbenos desde Contacto.';
+    if (!phone || !email) return 'Indica tu teléfono y tu email.';
+    if (String(p.descripcion || '').trim().length < MIN_CLAIM_DESC) return `Describe tu negocio con al menos ${MIN_CLAIM_DESC} caracteres.`;
+    if (p.titular !== 'si') return 'Confirma que eres el titular del negocio o que tienes su autorización.';
+    return null;
+  }
+  if (kind === 'alta' || kind === 'historia') {
+    if (!String(p.negocio || '').trim()) return 'Indica el nombre de tu negocio.';
+    if (!phone) return 'Indica un teléfono de contacto.';
+    return null;
+  }
+  if (kind === 'contacto') {
+    if (!phone && !email) return 'Indica un email o un teléfono para responderte.';
+    if (String(body.message || '').trim().length < 5) return 'Escribe tu mensaje.';
+    return null;
+  }
+  if (!phone && !email) return 'Indica un teléfono o un email de contacto.';
+  return null;
+}
 app.post('/api/leads', async (req, res) => {
   const body = req.body || {};
   // Honeypot: câmp ascuns completat doar de boți → răspundem OK, dar îl ignorăm.
   if (String(body.hp || '').trim()) return ok(res, { ok: true });
-  const name = String(body.name || '').trim();
-  const phone = String(body.phone || '').trim();
-  const email = String(body.email || '').trim();
-  if (name.length < 2) return res.status(400).json({ error: 'Indica tu nombre.' });
-  if (!phone && !email) return res.status(400).json({ error: 'Indica un teléfono o un email de contacto.' });
-  if (!leadLimiter(req.ip || 'unknown')) return res.status(429).json({ error: 'Demasiadas solicitudes. Inténtalo de nuevo en unos minutos.' });
+  const kind = DB.LEAD_KINDS.includes(body.kind) ? body.kind : 'quote';
+  const p = body.payload && typeof body.payload === 'object' ? body.payload : {};
   const biz = body.businessId ? DB.getBusiness(String(body.businessId)) : null;
+  const err = leadError(kind, body, p, biz);
+  if (err) return res.status(400).json({ error: err });
+  if (!leadLimiter(req.ip || 'unknown')) return res.status(429).json({ error: 'Demasiadas solicitudes. Inténtalo de nuevo en unos minutos.' });
   let lead;
   try {
-    lead = await DB.createLead({ businessId: biz ? biz.id : null, name, phone, email, message: body.message, context: body.context, sourceUrl: body.sourceUrl });
+    lead = await DB.createLead({
+      businessId: biz ? biz.id : null, name: body.name, phone: body.phone, email: body.email,
+      message: body.message, context: body.context, sourceUrl: body.sourceUrl, kind, payload: p,
+    });
   } catch (e) { console.error('lead insert error:', e); return res.status(500).json({ error: 'No se pudo enviar la solicitud. Inténtalo de nuevo.' }); }
   if (biz) lead.businessName = biz.name;
   try { await notifyLead(lead, { siteName: R.SITE.name }); } catch (e) { console.error('notify error:', e); }
@@ -464,8 +553,31 @@ app.post('/api/leads', async (req, res) => {
 });
 /* Inbox admin. */
 app.get('/api/leads', requireAuth, async (req, res) => {
-  const [leads, counts] = await Promise.all([DB.getLeads({ status: req.query.status }), DB.getLeadCounts()]);
+  const [leads, counts] = await Promise.all([DB.getLeads({ status: req.query.status, kind: req.query.kind }), DB.getLeadCounts()]);
   ok(res, { leads, counts });
+});
+/* Aprobar una reclamación (tras llamar al teléfono de la ficha): copia la
+   descripción y los datos del formulario a la ficha y la marca como verificada
+   → insignia ✓, sale antes en los listados y pasa a ser indexable. */
+app.post('/api/leads/:id/approve-claim', requireAuth, async (req, res) => {
+  const lead = await DB.getLead(req.params.id);
+  if (!lead || lead.kind !== 'claim' || !lead.business_id) return res.status(400).json({ error: 'Esta solicitud no es una reclamación de ficha.' });
+  const b = DB.getBusiness(lead.business_id);
+  if (!b) return res.status(404).json({ error: 'La ficha ya no existe.' });
+  const p = lead.payload || {};
+  const parts = [String(p.descripcion || '').trim()];
+  if (p.servicios) parts.push('Servicios: ' + String(p.servicios).trim());
+  if (p.zonas) parts.push('Zonas donde trabajamos: ' + String(p.zonas).trim());
+  const patch = { claimed: true, contact_name: b.contact_name || lead.name };
+  if (parts[0]) patch.about = parts.filter(Boolean).join('\n\n');
+  const web = String(p.web || '').trim();
+  if (web && !b.website && /^https?:\/\/[^\s]+\.[^\s]+$/i.test(web)) patch.website = web;
+  const updated = DB.updateBusiness(b.id, patch);
+  try {
+    await DB.persistBusiness(b.id);
+    await DB.setLeadStatus(lead.id, 'contacted');
+  } catch (e) { console.error('approve-claim persist error:', e); return res.status(500).json({ error: 'No se pudo guardar en la base de datos' }); }
+  ok(res, { business: updated });
 });
 app.patch('/api/leads/:id', requireAuth, async (req, res) => {
   const updated = await DB.setLeadStatus(req.params.id, (req.body || {}).status);
@@ -473,6 +585,58 @@ app.patch('/api/leads/:id', requireAuth, async (req, res) => {
 });
 app.delete('/api/leads/:id', requireAuth, async (req, res) => {
   return (await DB.deleteLead(req.params.id)) ? ok(res, { ok: true }) : res.status(404).json({ error: 'No encontrado' });
+});
+
+/* ------------------------------ Historias ----------------------------- */
+/* «Historias de profesionales» (lead magnet 2): solo admin. Publicar exige el
+   consentimiento del negocio y un texto con sustancia (las páginas finas no rankean). */
+const STORY_MIN_WORDS = 300;
+function storyError(data, cur) {
+  const merged = Object.assign({}, cur || {}, data || {});
+  if (!String(merged.title || '').trim()) return 'El título es obligatorio.';
+  if (merged.business_id && !DB.getBusiness(String(merged.business_id))) return 'El negocio indicado no existe.';
+  if (merged.status === 'published') {
+    const consent = data && data.consent !== undefined ? !!data.consent : !!(cur && cur.consent_at);
+    if (!consent) return 'Para publicar hace falta el consentimiento del negocio (nombre, fotos y respuestas).';
+    if (!String(merged.excerpt || '').trim()) return 'Escribe un resumen (sale en Google y en las tarjetas).';
+    const words = String(merged.body || '').split(/\s+/).filter(Boolean).length;
+    if (words < STORY_MIN_WORDS) return `La historia tiene ${words} palabras; para publicarla hacen falta al menos ${STORY_MIN_WORDS}.`;
+  }
+  return null;
+}
+const withStoryBiz = st => {
+  const b = st.business_id ? DB.getBusiness(st.business_id) : null;
+  return Object.assign(st, { businessName: b ? b.name : null, businessClaimed: b ? !!b.claimed : false });
+};
+app.get('/api/stories', requireAuth, (req, res) => ok(res, { stories: DB.listStories({}).map(withStoryBiz) }));
+app.get('/api/stories/:id', requireAuth, (req, res) => {
+  const st = DB.getStory(req.params.id);
+  return st ? ok(res, withStoryBiz(st)) : res.status(404).json({ error: 'No encontrada' });
+});
+app.post('/api/stories/preview', requireAuth, (req, res) => {
+  const body = req.body || {};
+  const b = body.business_id ? DB.getBusiness(String(body.business_id)) : null;
+  ok(res, { html: R.renderStoryBody(body.body, { website: b && b.website, sponsored: !!body.sponsored }) });
+});
+app.post('/api/stories', requireAuth, async (req, res) => {
+  const err = storyError(req.body || {}, null);
+  if (err) return res.status(400).json({ error: err });
+  let st;
+  try { st = DB.insertStory(req.body || {}); } catch (e) { return res.status(400).json({ error: e.message }); }
+  return respondAfter(res, DB.persistStory(st.id), withStoryBiz(st), 201);
+});
+app.put('/api/stories/:id', requireAuth, async (req, res) => {
+  const cur = DB.getStory(req.params.id);
+  if (!cur) return res.status(404).json({ error: 'No encontrada' });
+  const err = storyError(req.body || {}, cur);
+  if (err) return res.status(400).json({ error: err });
+  let st;
+  try { st = DB.updateStory(cur.id, req.body || {}); } catch (e) { return res.status(400).json({ error: e.message }); }
+  return respondAfter(res, DB.persistStory(st.id), withStoryBiz(st));
+});
+app.delete('/api/stories/:id', requireAuth, async (req, res) => {
+  const id = req.params.id;
+  return DB.removeStory(id) ? respondAfter(res, DB.persistStoryDelete(id), { ok: true }) : res.status(404).json({ error: 'No encontrada' });
 });
 
 /* -------------------------- Placements / clasament -------------------- */
@@ -522,10 +686,14 @@ app.use('/api', (req, res) => res.status(404).json({ error: 'Ruta no encontrada'
 
 /* ========================= PAGINI SEO (SSR) =========================== */
 app.get('/', (req, res) => sendHtml(res, R.renderHome(ctx(req))));
-/* Sitemap INDEX + sub-sitemap-uri (≤45k URL-uri/fișier, sub limita de 50k). */
+/* Sitemap INDEX + un sub-sitemap por tipo de página (principales, servicios,
+   distritos, municipios, barrios, metro, historias, negocios-N). */
 app.get('/sitemap.xml', (req, res) => res.type('application/xml').send(R.renderSitemapIndex(ctx(req))));
-app.get('/sitemap-paginas.xml', (req, res) => res.type('application/xml').send(R.renderSitemapPaginas(ctx(req))));
-app.get('/sitemap-negocios-:n.xml', (req, res) => res.type('application/xml').send(R.renderSitemapNegocios(ctx(req), req.params.n)));
+app.get('/sitemap-:name.xml', (req, res, next) => {
+  const xml = R.renderSitemapGroup(ctx(req), req.params.name);
+  if (!xml) return next();
+  res.type('application/xml').send(xml);
+});
 app.get('/robots.txt', (req, res) => res.type('text/plain').send(R.renderRobots(ctx(req))));
 app.get('/buscar', (req, res) => sendHtml(res, R.renderSearch(ctx(req), req.query.q, req.query.page)));
 app.get('/zonas', (req, res) => sendHtml(res, R.renderZonesIndex(ctx(req))));
@@ -550,6 +718,44 @@ app.get('/negocio/:id', (req, res, next) => {
   if (!b) return next();
   sendHtml(res, R.renderBusiness(ctx(req), b));
 });
+
+/* Insignia «Verificado en Profesionales Madrid» para la web del negocio (solo
+   fichas verificadas). Enlaza a la ficha: backlinks con anchor de marca. */
+app.get('/insignia/:id.svg', (req, res, next) => {
+  const b = DB.getBusiness(req.params.id);
+  if (!b || !b.claimed) return next();
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.type('image/svg+xml').send(R.renderBadgeSvg(b));
+});
+
+/* Para profesionales: alta gratis, reclamar ficha (buscador) y página por oficio. */
+app.get('/profesionales', (req, res) => sendHtml(res, R.renderProfesionales(ctx(req), req.query.q)));
+app.get('/profesionales/:categoria', (req, res, next) => {
+  const cat = DB.getCategoryBySlug(req.params.categoria);
+  if (!cat || cat.parent_id) return next();
+  sendHtml(res, R.renderProfesionalesCategoria(ctx(req), cat));
+});
+/* Precios orientativos y guías (contenido para clientes). */
+app.get('/precios', (req, res) => sendHtml(res, R.renderPreciosIndex(ctx(req))));
+app.get('/precios/:slug', (req, res, next) => {
+  const pr = R.precioBySlug(req.params.slug);
+  return pr ? sendHtml(res, R.renderPrecio(ctx(req), pr)) : next();
+});
+app.get('/guias', (req, res) => sendHtml(res, R.renderGuiasIndex(ctx(req))));
+app.get('/guias/:slug', (req, res, next) => {
+  const g = R.guiaBySlug(req.params.slug);
+  return g ? sendHtml(res, R.renderGuia(ctx(req), g)) : next();
+});
+
+/* Historias de profesionales (solo publicadas). */
+app.get('/historias', (req, res) => sendHtml(res, R.renderStoriesIndex(ctx(req), req.query.page, req.query.categoria)));
+app.get('/historias/:slug', (req, res, next) => {
+  const st = DB.getStory(req.params.slug);
+  if (!st || st.status !== 'published') return next();
+  sendHtml(res, R.renderStory(ctx(req), st));
+});
+app.get('/contacto', (req, res) => sendHtml(res, R.renderContacto(ctx(req), req.query.negocio ? DB.getBusiness(String(req.query.negocio)) : null)));
+app.get('/sobre-nosotros', (req, res) => sendHtml(res, R.renderSobreNosotros(ctx(req))));
 
 app.get('/zona/:distrito', (req, res, next) => {
   const d = DB.getDistrictBySlug(req.params.distrito);
