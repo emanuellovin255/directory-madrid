@@ -157,7 +157,7 @@
         <div class="admin-head">
           <div>
             <h1>Orden / Clasamentos</h1>
-            <p>Elige un <b>contexto</b> para ver las empresas y <b>arrástralas</b> (o usa ▲▼) para fijar el orden. «Home» = destacadas de la portada; «Por servicio» = el orden dentro de cada nicho, zona o municipio. Por defecto es aleatorio; solo lo que fijes aquí se mantiene.</p>
+            <p>Elige un <b>contexto</b>. «Por servicio» muestra las páginas del nicho tal como se ven en la web (<b>20 por página</b>): escribe el <b>nº de posición</b> de una empresa (p. ej. 45 = página 3), arrástrala o pulsa «Fijar aquí». Las posiciones libres se rellenan solas. «Home» = Empresas destacadas (página 1 en la portada, el resto en /destacadas).</p>
           </div>
         </div>
         <div class="panel">
@@ -191,19 +191,23 @@
                 <select class="input" id="ord-mun"></select>
               </div>
               <div class="ord-actions">
-                <button class="btn btn-ghost btn-sm" id="ord-reset">Restablecer a aleatorio</button>
+                <button class="btn btn-ghost btn-sm" id="ord-reset">Quitar posiciones fijadas</button>
                 <button class="btn btn-primary btn-sm" id="ord-save">Guardar orden</button>
               </div>
             </div>
             <p class="ord-hint" id="ord-status">Cargando…</p>
-            <div class="ord-board" id="ord-board"></div>
             <div class="ord-add" id="ord-add" style="display:none">
-              <div class="ord-add-head">Añadir empresas a “Empresas destacadas” <span class="muted" style="font-weight:500">— se añaden al final; luego arrástralas y pulsa «Guardar orden»</span></div>
+              <div class="ord-add-head" id="ord-add-head">Añadir empresas</div>
               <div class="ord-add-body">
-                <input class="input" id="ord-add-search" placeholder="Buscar empresa por nombre, zona o teléfono…" />
+                <div class="ord-add-controls">
+                  <input class="input" id="ord-add-search" placeholder="Buscar empresa por nombre o zona…" />
+                  <label class="ord-add-pos">en la posición nº <input class="input" id="ord-add-pos" type="number" min="1" step="1" /></label>
+                </div>
                 <div class="ord-add-list" id="ord-add-list"></div>
               </div>
             </div>
+            <div class="ord-pager" id="ord-pager"></div>
+            <div class="ord-board" id="ord-board"></div>
           </div>
         </div>
       </section>

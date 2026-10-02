@@ -730,9 +730,16 @@
   }
 
   /* ----------------------- Orden / Clasamentos -------------------------- */
+  /* Două moduri:
+     • „home"  — lista de Empresas destacadas (doar cele alese), pagini de 20.
+     • „slots" — o nișă (± zonă/municipio): TOATE firmele, exact ca pe site (20 pe
+       pagină). Poziții FIXE absolute: firma fixată pe nr. 45 stă pe pagina 3, iar
+       golurile se umplu automat cu restul (ordine aleatorie stabilă). */
   const ORD_PAGE = 20;
   let ordZones = [], ordInited = false;
-  let ordCtx = null, ordItems = [], ordAvailable = [], ordDragId = null;
+  let ordCtx = null, ordKind = null, ordDirty = false, ordDragId = null;
+  let ordItems = [], ordAvailable = [];                       // home
+  let slotAll = [], slotInfo = new Map(), slotPins = new Map(), slotPage = 1;   // slots (pins: id → poziție 1-based)
 
   function ordResolveContext() {
     const type = $('#ord-type').value;
@@ -743,6 +750,15 @@
     if (scope === 'zona') { const z = $('#ord-zona').value; return z ? `cat:${cat}:zona:${z}` : null; }
     if (scope === 'mun') { const m = $('#ord-mun').value; return m ? `cat:${cat}:mun:${m}` : null; }
     return `cat:${cat}`;
+  }
+  function ordCtxLabel() {
+    if (ordCtx === 'home') return 'Empresas destacadas';
+    const cat = categoriesTree.find(c => c.slug === $('#ord-cat').value);
+    const scope = $('#ord-scope').value;
+    let where = 'toda la Comunidad';
+    if (scope === 'zona') { const z = ordZones.find(x => x.slug === $('#ord-zona').value); if (z) where = 'zona ' + z.name; }
+    if (scope === 'mun') { const d = districts.find(x => x.slug === $('#ord-mun').value); if (d) where = d.name; }
+    return `${cat ? cat.name : ''} · ${where}`;
   }
   function ordSyncFields() {
     const isCat = $('#ord-type').value === 'cat';
@@ -757,46 +773,157 @@
     $('#ord-mun').innerHTML = '<option value="">Elige municipio/distrito…</option>' + districts.map(d => `<option value="${attr(d.slug)}">${esc(d.name)}</option>`).join('');
     $('#ord-zona').innerHTML = '<option value="">Elige zona…</option>' + ordZones.map(z => `<option value="${attr(z.slug)}">${esc(z.name)}</option>`).join('');
   }
-  function ordThumb(b) { return attr(b.cover || D.placeholderImage(b.name)); }
-  function ordSlot(b, pos) {
-    return `<li class="ord-slot" draggable="true" data-id="${attr(b.id)}">
-      <span class="ord-grip" aria-hidden="true" title="Arrastra para reordenar">⠿</span>
-      <span class="ord-pos">${pos + 1}</span>
-      <span class="ord-thumb"><img src="${ordThumb(b)}" alt="" /></span>
-      <span class="ord-info"><span class="ord-name">${esc(b.name)}${b.featured ? ' ★' : ''}</span><span class="ord-zone">${esc(b.zone || '')}</span></span>
+  function ordThumb(cover, name) { return attr(cover || D.placeholderImage(name)); }
+  function ordSetDirty(v) {
+    ordDirty = v;
+    $('#ord-save').textContent = v ? 'Guardar orden •' : 'Guardar orden';
+    $('#ord-save').classList.toggle('is-dirty', v);
+  }
+  const clampInt = (v, lo, hi) => Math.min(hi, Math.max(lo, parseInt(v, 10) || lo));
+
+  /* ------------------------------ Modo slots ------------------------------ */
+  /* Ordinea publică = fixările pe slotul lor + restul (ordinea automată) în goluri.
+     Identic cu orderByContext de pe server. */
+  function slotOrder() {
+    const pinned = [...slotPins.entries()].filter(([id]) => slotInfo.has(id)).sort((a, b) => a[1] - b[1]);
+    const rest = slotAll.filter(b => !slotPins.has(b.id)).map(b => b.id);
+    const out = []; let ri = 0;
+    for (const [id, pos] of pinned) {
+      while (out.length < pos - 1 && ri < rest.length) out.push(rest[ri++]);
+      out.push(id);
+    }
+    while (ri < rest.length) out.push(rest[ri++]);
+    return out;
+  }
+  /* Mută o firmă pe poziția `pos` (1-based) și o fixează acolo. Dacă pe slotul
+     respectiv stă altă firmă fixată, schimbă locurile (ia vechiul loc). */
+  function slotMoveTo(id, pos) {
+    const order = slotOrder();
+    pos = clampInt(pos, 1, Math.max(1, order.length));
+    const cur = order.indexOf(id) + 1;
+    if (slotPins.get(id) === pos && cur === pos) return false;
+    for (const [oid, p] of slotPins) if (oid !== id && p === pos) { slotPins.set(oid, cur || pos + 1); break; }
+    slotPins.set(id, pos);
+    ordSetDirty(true);
+    return true;
+  }
+  function slotFirstFree(page) {
+    const order = slotOrder(), from = (page - 1) * ORD_PAGE;
+    for (let i = from; i < Math.min(order.length, from + ORD_PAGE); i++) if (!slotPins.has(order[i])) return i + 1;
+    return from + 1;
+  }
+  function slotRow(id, pos) {
+    const b = slotInfo.get(id) || { n: id, z: '', r: 0 };
+    const pinned = slotPins.has(id);
+    return `<li class="ord-slot ${pinned ? 'is-pinned' : 'is-auto'}" draggable="true" data-id="${attr(id)}" data-pos="${pos}">
+      <span class="ord-grip" aria-hidden="true" title="Arrastra a otra posición">⠿</span>
+      <input class="ord-pos-input" type="number" min="1" value="${pos}" data-ordpos title="Escribe la posición (nº) y pulsa Enter" aria-label="Posición" />
+      <span class="ord-thumb"><img src="${ordThumb(b.c, b.n)}" alt="" loading="lazy" /></span>
+      <span class="ord-info"><span class="ord-name">${esc(b.n)}</span><span class="ord-zone">${esc(b.z || '')}${b.r ? ` · ${fmt(b.r)} reseñas` : ''}</span></span>
+      <span class="ord-badge ${pinned ? 'pin' : 'auto'}">${pinned ? 'Fijada' : 'Automática'}</span>
       <span class="ord-slot-actions">
-        <button class="icon-btn" data-ord="up" title="Subir">▲</button>
-        <button class="icon-btn" data-ord="down" title="Bajar">▼</button>
-        ${ordCtx === 'home' ? `<button class="icon-btn danger" data-ord="remove" title="Quitar de destacadas">${IC.trash}</button>` : ''}
+        ${pinned
+          ? `<button class="icon-btn" data-ord="up" title="Subir una posición">▲</button><button class="icon-btn" data-ord="down" title="Bajar una posición">▼</button><button class="icon-btn danger" data-ord="unpin" title="Soltar (vuelve al orden automático)">✕</button>`
+          : `<button class="btn btn-soft btn-sm" data-ord="pin" title="Fijar esta empresa en esta posición">Fijar aquí</button>`}
       </span>
     </li>`;
   }
-  function ordRenderBoard() {
-    const board = $('#ord-board');
-    if (ordCtx) $('#ord-status').textContent = ordStatusText(ordCtx === 'home' ? 'home' : 'cat');
-    if (!ordItems.length) { board.innerHTML = `<div class="ord-empty">No hay empresas en este contexto${ordCtx === 'home' ? '. Añádelas abajo.' : ' todavía.'}</div>`; return; }
-    const pages = Math.ceil(ordItems.length / ORD_PAGE);
-    let html = '';
-    for (let pg = 0; pg < pages; pg++) {
-      const slice = ordItems.slice(pg * ORD_PAGE, (pg + 1) * ORD_PAGE);
-      html += `<div class="ord-page"><div class="ord-page-head"><b>Página ${pg + 1}</b><span class="ord-page-count">${slice.length} ${slice.length === 1 ? 'empresa' : 'empresas'}</span></div>`;
-      html += `<ul class="ord-slots" data-page="${pg}">${slice.map((b, i) => ordSlot(b, pg * ORD_PAGE + i)).join('')}</ul></div>`;
-    }
-    board.innerHTML = html;
+  function slotPagerHtml(pages) {
+    const pinPages = new Map();
+    slotOrder().forEach((id, i) => { if (slotPins.has(id)) { const pg = Math.floor(i / ORD_PAGE) + 1; pinPages.set(pg, (pinPages.get(pg) || 0) + 1); } });
+    const opts = Array.from({ length: pages }, (_, i) => `<option value="${i + 1}"${i + 1 === slotPage ? ' selected' : ''}>${i + 1}${pinPages.has(i + 1) ? ' •' : ''}</option>`).join('');
+    const chips = [...pinPages.entries()].sort((a, b) => a[0] - b[0]).map(([pg, n]) => `<button class="chip${pg === slotPage ? ' is-on' : ''}" data-goto="${pg}">Pág. ${pg} · ${n} ${n === 1 ? 'fijada' : 'fijadas'}</button>`).join('');
+    return `<div class="ord-pager-nav">
+        <button class="btn btn-ghost btn-sm" data-goto="${slotPage - 1}" ${slotPage <= 1 ? 'disabled' : ''}>← Anterior</button>
+        <label>Página <select class="input" data-pagesel>${opts}</select> de ${pages}</label>
+        <button class="btn btn-ghost btn-sm" data-goto="${slotPage + 1}" ${slotPage >= pages ? 'disabled' : ''}>Siguiente →</button>
+      </div>
+      ${chips ? `<div class="ord-pin-pages"><span class="muted">Con posiciones fijadas:</span>${chips}</div>` : ''}`;
   }
-  /* Pool-ul de adăugat vine de la server (căutare pe nume/zonă/teléfono, cele mai
-     recenzate întâi) — pot fi zeci de mii de negocios, nu le încărcăm pe toate. */
+  function slotRender() {
+    const order = slotOrder();
+    const total = order.length, pages = Math.max(1, Math.ceil(total / ORD_PAGE));
+    slotPage = clampInt(slotPage, 1, pages);
+    const pinCount = [...slotPins.keys()].filter(id => slotInfo.has(id)).length;
+    $('#ord-status').innerHTML = `<b>${esc(ordCtxLabel())}</b>: ${fmt(total)} ${total === 1 ? 'empresa' : 'empresas'} · ${pages} ${pages === 1 ? 'página' : 'páginas'} de 20 en la web. `
+      + `<b>${pinCount}</b> ${pinCount === 1 ? 'posición fijada' : 'posiciones fijadas'}; el resto se rellena automáticamente. `
+      + `Escribe el <b>nº</b> de posición (p. ej. 45 = página 3), arrastra, o pulsa «Fijar aquí». Luego «Guardar orden».`;
+    $('#ord-pager').innerHTML = slotPagerHtml(pages);
+    if (!total) { $('#ord-board').innerHTML = '<div class="ord-empty">No hay empresas en este contexto todavía.</div>'; return; }
+    const from = (slotPage - 1) * ORD_PAGE, slice = order.slice(from, from + ORD_PAGE);
+    const nPin = slice.filter(id => slotPins.has(id)).length;
+    $('#ord-board').innerHTML = `<div class="ord-page"><div class="ord-page-head"><b>Página ${slotPage}</b><span class="ord-page-count">posiciones ${from + 1}–${from + slice.length} · ${nPin} ${nPin === 1 ? 'fijada' : 'fijadas'}, ${slice.length - nPin} automáticas</span></div>
+      <ul class="ord-slots">${slice.map((id, i) => slotRow(id, from + i + 1)).join('')}</ul></div>`;
+    const posIn = $('#ord-add-pos'); if (posIn && !posIn.dataset.touched) posIn.value = slotFirstFree(slotPage);
+    ordRenderAdd();
+  }
+
+  /* ------------------------------ Modo home ------------------------------- */
+  function homeRow(b, pos) {
+    return `<li class="ord-slot is-pinned" draggable="true" data-id="${attr(b.id)}" data-pos="${pos}">
+      <span class="ord-grip" aria-hidden="true" title="Arrastra para reordenar">⠿</span>
+      <input class="ord-pos-input" type="number" min="1" value="${pos}" data-ordpos title="Escribe la posición (nº) y pulsa Enter" aria-label="Posición" />
+      <span class="ord-thumb"><img src="${ordThumb(b.cover, b.name)}" alt="" /></span>
+      <span class="ord-info"><span class="ord-name">${esc(b.name)}${b.featured ? ' ★' : ''}</span><span class="ord-zone">${esc(b.zone || '')}${b.reviews ? ` · ${fmt(b.reviews)} reseñas` : ''}</span></span>
+      <span class="ord-slot-actions">
+        <button class="icon-btn" data-ord="up" title="Subir">▲</button>
+        <button class="icon-btn" data-ord="down" title="Bajar">▼</button>
+        <button class="icon-btn danger" data-ord="remove" title="Quitar de destacadas">${IC.trash}</button>
+      </span>
+    </li>`;
+  }
+  function homeRender() {
+    const n = ordItems.length, pages = Math.max(1, Math.ceil(n / ORD_PAGE));
+    $('#ord-status').innerHTML = `<b>Empresas destacadas</b>: ${n} en la lista · ${pages} ${pages === 1 ? 'página' : 'páginas'} de 20. `
+      + `La página 1 sale en la portada; las siguientes en <a href="/destacadas" target="_blank" rel="noopener">/destacadas</a>. Escribe el <b>nº</b> de posición, arrastra o usa ▲▼, y «Guardar orden».`;
+    $('#ord-pager').innerHTML = '';
+    if (!n) { $('#ord-board').innerHTML = '<div class="ord-empty">Aún no has elegido empresas destacadas (la portada muestra 20 al azar). Añádelas abajo.</div>'; }
+    else {
+      let html = '';
+      for (let pg = 0; pg < pages; pg++) {
+        const slice = ordItems.slice(pg * ORD_PAGE, (pg + 1) * ORD_PAGE);
+        html += `<div class="ord-page"><div class="ord-page-head"><b>Página ${pg + 1}</b><span class="ord-page-count">${pg === 0 ? 'portada · ' : ''}posiciones ${pg * ORD_PAGE + 1}–${pg * ORD_PAGE + slice.length}</span></div>`;
+        html += `<ul class="ord-slots">${slice.map((b, i) => homeRow(b, pg * ORD_PAGE + i + 1)).join('')}</ul></div>`;
+      }
+      $('#ord-board').innerHTML = html;
+    }
+    const posIn = $('#ord-add-pos'); if (posIn && !posIn.dataset.touched) posIn.value = n + 1;
+    ordRenderAdd();
+  }
+  function homeMoveTo(id, pos) {
+    const i = ordItems.findIndex(b => b.id === id); if (i < 0) return false;
+    pos = clampInt(pos, 1, ordItems.length);
+    if (pos === i + 1) return false;
+    const [b] = ordItems.splice(i, 1);
+    ordItems.splice(pos - 1, 0, b);
+    ordSetDirty(true);
+    return true;
+  }
+
+  /* --------------------------- Añadir / buscar ---------------------------- */
   function ordRenderAdd() {
+    const q = norm($('#ord-add-search').value || '');
+    let rows;
+    if (ordKind === 'slots') {
+      const order = slotOrder(), posOf = new Map(order.map((id, i) => [id, i + 1]));
+      const list = q ? slotAll.filter(b => norm(b.n + ' ' + (b.z || '')).includes(q)) : [];
+      rows = list.slice(0, 40).map(b => {
+        const pos = posOf.get(b.id), pg = Math.ceil(pos / ORD_PAGE);
+        return `<div class="ord-add-row"><span class="ord-thumb"><img src="${ordThumb(b.c, b.n)}" alt=""></span><span class="ord-name">${esc(b.n)}<small class="muted" style="display:block;font-weight:500">${esc(b.z || '')}${b.r ? ` · ${fmt(b.r)} reseñas` : ''} · ahora nº ${pos} (pág. ${pg})${slotPins.has(b.id) ? ' · fijada' : ''}</small></span><button class="btn btn-soft btn-sm" data-add="${attr(b.id)}">Poner aquí</button></div>`;
+      });
+      $('#ord-add-list').innerHTML = rows.length ? rows.join('')
+        : `<p class="muted" style="padding:8px 4px">${q ? 'Sin resultados en este servicio.' : 'Escribe para buscar una empresa de este servicio y ponerla en la posición que quieras.'}</p>`;
+      return;
+    }
     const inList = new Set(ordItems.map(b => b.id));
     const list = ordAvailable.filter(b => !inList.has(b.id));
     $('#ord-add-list').innerHTML = list.length
-      ? list.map(b => `
-        <div class="ord-add-row"><span class="ord-thumb"><img src="${ordThumb(b)}" alt=""></span><span class="ord-name">${esc(b.name)}<small class="muted" style="display:block;font-weight:500">${esc(b.zone || '')}${b.reviews ? ` · ${fmt(b.reviews)} reseñas` : ''}</small></span><button class="btn btn-soft btn-sm" data-add="${attr(b.id)}">Añadir</button></div>`).join('')
+      ? list.map(b => `<div class="ord-add-row"><span class="ord-thumb"><img src="${ordThumb(b.cover, b.name)}" alt=""></span><span class="ord-name">${esc(b.name)}<small class="muted" style="display:block;font-weight:500">${esc(b.zone || '')}${b.reviews ? ` · ${fmt(b.reviews)} reseñas` : ''}</small></span><button class="btn btn-soft btn-sm" data-add="${attr(b.id)}">Añadir</button></div>`).join('')
       : `<p class="muted" style="padding:8px 4px">${$('#ord-add-search').value.trim() ? 'Sin resultados para esa búsqueda.' : 'No hay más empresas para añadir.'}</p>`;
   }
   let ordSearchT = null, ordSearchSeq = 0;
-  async function ordSearchAvailable() {
-    if (ordCtx !== 'home') return;
+  async function ordSearch() {
+    if (ordKind === 'slots') { ordRenderAdd(); return; }   // căutare locală în nișă
     const seq = ++ordSearchSeq;
     try {
       const d = await api.getPlacements('home', $('#ord-add-search').value.trim());
@@ -805,21 +932,51 @@
       ordRenderAdd();
     } catch { /* ignoră */ }
   }
-  function ordStatusText(kind) {
-    if (kind === 'home') return `Empresas destacadas del home — arrastra para ordenar. ${ordItems.length} en la lista · 20 por página.`;
-    return `${ordItems.length} ${ordItems.length === 1 ? 'empresa' : 'empresas'} · arrastra para fijar el orden. Por defecto es aleatorio; fijar aquí lo sobrescribe.`;
+  function ordAdd(id) {
+    const pos = parseInt($('#ord-add-pos').value, 10);
+    if (ordKind === 'slots') {
+      const b = slotInfo.get(id); if (!b) return;
+      slotMoveTo(id, pos || slotFirstFree(slotPage));
+      const where = slotOrder().indexOf(id) + 1;
+      slotPage = Math.ceil(where / ORD_PAGE);
+      delete $('#ord-add-pos').dataset.touched;
+      slotRender();
+      toast(`«${b.n}» fijada en el nº ${where} (página ${slotPage}). Pulsa «Guardar orden».`);
+      return;
+    }
+    const idx = ordAvailable.findIndex(b => b.id === id); if (idx < 0) return;
+    const [b] = ordAvailable.splice(idx, 1);
+    const at = clampInt(pos || ordItems.length + 1, 1, ordItems.length + 1);
+    ordItems.splice(at - 1, 0, b);
+    ordSetDirty(true);
+    delete $('#ord-add-pos').dataset.touched;
+    homeRender();
+    toast(`«${b.name}» añadida en el nº ${at} (página ${Math.ceil(at / ORD_PAGE)}). Pulsa «Guardar orden».`);
   }
+
+  /* ------------------------------ Carga / guardar ------------------------- */
+  function ordRender() { if (ordKind === 'slots') slotRender(); else if (ordKind === 'home') homeRender(); }
   async function ordLoad() {
     ordCtx = ordResolveContext();
     const board = $('#ord-board'), status = $('#ord-status'), add = $('#ord-add');
-    if (!ordCtx) { board.innerHTML = ''; add.style.display = 'none'; status.textContent = 'Elige servicio, zona o municipio para ver el clasamento.'; return; }
-    status.textContent = 'Cargando…';
+    ordSetDirty(false);
+    $('#ord-pager').innerHTML = '';
+    if (!ordCtx) { ordKind = null; board.innerHTML = ''; add.style.display = 'none'; status.textContent = 'Elige servicio, zona o municipio para ver el clasamento.'; return; }
+    status.textContent = 'Cargando…'; board.innerHTML = '';
     try {
       const d = await api.getPlacements(ordCtx, ordCtx === 'home' ? ($('#ord-add-search').value.trim() || undefined) : undefined);
-      ordItems = d.items || []; ordAvailable = d.available || [];
-      status.textContent = ordStatusText(d.kind);
-      add.style.display = d.kind === 'home' ? '' : 'none';
-      ordRenderBoard(); if (d.kind === 'home') ordRenderAdd();
+      ordKind = d.kind === 'home' ? 'home' : 'slots';
+      add.style.display = '';
+      $('#ord-add-head').innerHTML = ordKind === 'home'
+        ? 'Añadir empresas a «Empresas destacadas» <span class="muted" style="font-weight:500">— busca entre todas las empresas</span>'
+        : 'Poner una empresa en una posición concreta <span class="muted" style="font-weight:500">— busca dentro de este servicio</span>';
+      delete $('#ord-add-pos').dataset.touched;
+      if (ordKind === 'home') { ordItems = d.items || []; ordAvailable = d.available || []; }
+      else {
+        slotAll = d.all || []; slotInfo = new Map(slotAll.map(b => [b.id, b]));
+        slotPins = new Map((d.pins || []).map(p => [p.id, p.pos])); slotPage = 1;
+      }
+      ordRender();
     } catch (e) {
       status.textContent = 'No se pudo cargar el clasamento.';
       if (e.status === 401) location.replace('login.html');
@@ -828,39 +985,76 @@
   async function ordSave() {
     if (!ordCtx) return;
     $('#ord-save').disabled = true;
-    try { await api.setPlacements(ordCtx, ordItems.map(b => b.id)); toast('Orden guardado'); }
-    catch (e) { toast(e.status === 401 ? 'Sesión expirada' : 'No se pudo guardar el orden', 'err'); }
+    try {
+      if (ordKind === 'slots') await api.setPlacementSlots(ordCtx, [...slotPins.entries()].filter(([id]) => slotInfo.has(id)).map(([id, pos]) => ({ id, pos })));
+      else await api.setPlacements(ordCtx, ordItems.map(b => b.id));
+      ordSetDirty(false);
+      toast('Orden guardado — ya se ve así en la web');
+    } catch (e) { toast(e.status === 401 ? 'Sesión expirada' : 'No se pudo guardar el orden', 'err'); }
     finally { $('#ord-save').disabled = false; }
   }
   async function ordReset() {
     if (!ordCtx) return;
-    if (!confirm('¿Restablecer este contexto a orden aleatorio? Se borrará el orden manual guardado.')) return;
-    try { await api.clearPlacements(ordCtx); toast('Restablecido a aleatorio'); await ordLoad(); }
+    const msg = ordKind === 'home' ? '¿Vaciar la lista de Empresas destacadas? (la portada mostrará empresas al azar)' : '¿Quitar todas las posiciones fijadas de este servicio/zona? Volverá al orden automático.';
+    if (!confirm(msg)) return;
+    try { await api.clearPlacements(ordCtx); toast('Restablecido'); await ordLoad(); }
     catch (e) { toast(e.status === 401 ? 'Sesión expirada' : 'No se pudo restablecer', 'err'); }
   }
+  function ordMove(id, pos) {
+    const changed = ordKind === 'slots' ? slotMoveTo(id, pos) : homeMoveTo(id, pos);
+    if (changed && ordKind === 'slots') { const where = slotOrder().indexOf(id) + 1; slotPage = Math.ceil(where / ORD_PAGE); }
+    ordRender();
+  }
   function bindOrden() {
-    ['ord-type', 'ord-cat', 'ord-scope', 'ord-zona', 'ord-mun'].forEach(id => $('#' + id).addEventListener('change', () => { ordSyncFields(); ordLoad(); }));
+    let lastCtxValues = null;
+    const ctxSelects = ['ord-type', 'ord-cat', 'ord-scope', 'ord-zona', 'ord-mun'];
+    const snapshot = () => ctxSelects.map(id => $('#' + id).value);
+    ctxSelects.forEach(id => {
+      $('#' + id).addEventListener('focus', () => { lastCtxValues = snapshot(); });
+      $('#' + id).addEventListener('change', () => {
+        if (ordDirty && !confirm('Hay cambios sin guardar en este clasamento. ¿Descartarlos?')) {
+          if (lastCtxValues) ctxSelects.forEach((sid, i) => { $('#' + sid).value = lastCtxValues[i]; });
+          ordSyncFields(); return;
+        }
+        ordSyncFields(); ordLoad();
+      });
+    });
     $('#ord-save').addEventListener('click', ordSave);
     $('#ord-reset').addEventListener('click', ordReset);
-    $('#ord-add-search').addEventListener('input', () => { clearTimeout(ordSearchT); ordSearchT = setTimeout(ordSearchAvailable, 250); });
-    $('#ord-add-list').addEventListener('click', e => {
-      const btn = e.target.closest('button[data-add]'); if (!btn) return;
-      const idx = ordAvailable.findIndex(b => b.id === btn.dataset.add); if (idx < 0) return;
-      const [b] = ordAvailable.splice(idx, 1);
-      ordItems.push(b);   // al final: el orden lo decides tú (arrastra y «Guardar orden»)
-      ordRenderBoard(); ordRenderAdd();
-      toast(`«${b.name}» añadida al final (nº ${ordItems.length}). Pulsa «Guardar orden».`);
+    $('#ord-add-search').addEventListener('input', () => { clearTimeout(ordSearchT); ordSearchT = setTimeout(ordSearch, ordKind === 'slots' ? 120 : 250); });
+    $('#ord-add-pos').addEventListener('input', e => { e.target.dataset.touched = '1'; });
+    $('#ord-add-list').addEventListener('click', e => { const btn = e.target.closest('button[data-add]'); if (btn) ordAdd(btn.dataset.add); });
+    $('#ord-pager').addEventListener('click', e => {
+      const b = e.target.closest('[data-goto]'); if (!b || b.disabled) return;
+      slotPage = parseInt(b.dataset.goto, 10) || 1; delete $('#ord-add-pos').dataset.touched; slotRender();
+    });
+    $('#ord-pager').addEventListener('change', e => {
+      if (!e.target.matches('[data-pagesel]')) return;
+      slotPage = parseInt(e.target.value, 10) || 1; delete $('#ord-add-pos').dataset.touched; slotRender();
     });
     const board = $('#ord-board');
     board.addEventListener('click', e => {
       const btn = e.target.closest('button[data-ord]'); if (!btn) return;
-      const slot = btn.closest('.ord-slot'); const i = ordItems.findIndex(x => x.id === slot.dataset.id); if (i < 0) return;
+      const slot = btn.closest('.ord-slot'); const id = slot.dataset.id, pos = parseInt(slot.dataset.pos, 10);
       const act = btn.dataset.ord;
-      if (act === 'up' && i > 0) { const t = ordItems[i - 1]; ordItems[i - 1] = ordItems[i]; ordItems[i] = t; ordRenderBoard(); }
-      else if (act === 'down' && i < ordItems.length - 1) { const t = ordItems[i + 1]; ordItems[i + 1] = ordItems[i]; ordItems[i] = t; ordRenderBoard(); }
-      else if (act === 'remove') { const [b] = ordItems.splice(i, 1); ordAvailable.unshift(b); ordRenderBoard(); ordRenderAdd(); }
+      if (act === 'up') ordMove(id, pos - 1);
+      else if (act === 'down') ordMove(id, pos + 1);
+      else if (act === 'pin') { slotPins.set(id, pos); ordSetDirty(true); slotRender(); }
+      else if (act === 'unpin') { slotPins.delete(id); ordSetDirty(true); slotRender(); }
+      else if (act === 'remove') { const i = ordItems.findIndex(x => x.id === id); if (i >= 0) { const [b] = ordItems.splice(i, 1); ordAvailable.unshift(b); ordSetDirty(true); homeRender(); } }
     });
-    board.addEventListener('dragstart', e => { const s = e.target.closest('.ord-slot'); if (!s) return; ordDragId = s.dataset.id; s.classList.add('dragging'); if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'; });
+    // Poziție scrisă de mână: Enter (sau ieșirea din câmp) mută firma acolo.
+    board.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches('[data-ordpos]')) { e.preventDefault(); e.target.blur(); } });
+    board.addEventListener('change', e => {
+      if (!e.target.matches('[data-ordpos]')) return;
+      const slot = e.target.closest('.ord-slot');
+      ordMove(slot.dataset.id, e.target.value);
+    });
+    board.addEventListener('dragstart', e => {
+      if (e.target.matches && e.target.matches('input')) return;
+      const s = e.target.closest('.ord-slot'); if (!s) return;
+      ordDragId = s.dataset.id; s.classList.add('dragging'); if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+    });
     board.addEventListener('dragend', () => { $$('.ord-slot', board).forEach(x => x.classList.remove('dragging', 'drop-target')); ordDragId = null; });
     board.addEventListener('dragover', e => {
       const s = e.target.closest('.ord-slot'); if (!s || !ordDragId) return;
@@ -871,15 +1065,9 @@
     board.addEventListener('drop', e => {
       const s = e.target.closest('.ord-slot'); if (!s || !ordDragId) return;
       e.preventDefault();
-      const targetId = s.dataset.id; if (targetId === ordDragId) return;
-      const from = ordItems.findIndex(x => x.id === ordDragId); if (from < 0) return;
-      const [moved] = ordItems.splice(from, 1);
-      let to = ordItems.findIndex(x => x.id === targetId);
-      const rect = s.getBoundingClientRect();
-      if (e.clientY > rect.top + rect.height / 2) to += 1;
-      ordItems.splice(to, 0, moved);
-      ordRenderBoard();
+      if (s.dataset.id !== ordDragId) ordMove(ordDragId, parseInt(s.dataset.pos, 10));
     });
+    window.addEventListener('beforeunload', e => { if (ordDirty) { e.preventDefault(); e.returnValue = ''; } });
   }
   async function ordEnter() {
     if (!ordInited) {
@@ -890,7 +1078,7 @@
       if (categoriesTree.length) { $('#ord-type').value = 'cat'; $('#ord-cat').value = categoriesTree[0].slug; }
       ordSyncFields(); ordInited = true;
     }
-    ordLoad();
+    if (!ordDirty) ordLoad();   // cu modificări nesalvate păstrăm panoul cum e
   }
 
   /* --------------------------- View switching --------------------------- */

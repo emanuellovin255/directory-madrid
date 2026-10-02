@@ -739,10 +739,11 @@ function renderHome(ctx) {
   const distritos = DB.listDistritos();
   const zones = DB.listZones();
   const metros = DB.listMetros();
-  // Destacadas = lista curată „home" (primele 12); fallback: shuffle din toate
-  // (light → hidratăm doar cele 12, nu materializăm toate cele 100k).
-  let featList = DB.listHome({ pageSize: 12 }).items;
-  if (!featList.length) featList = DB.listForContext('home', {}, { pageSize: 12 }).items;
+  // Destacadas = lista curată „home", 20 pe pagină (pagina 1 aici, restul pe
+  // /destacadas?page=N); fallback: shuffle din toate (light → hidratăm doar 20).
+  let feat = DB.listHome({ pageSize: 20 });
+  if (!feat.total) feat = DB.listForContext('home', {}, { pageSize: 20 });
+  const featList = feat.items;
   const total = DB.countBusinesses();
 
   const inlineData = {
@@ -805,6 +806,7 @@ function renderHome(ctx) {
       <div class="container">
         <div class="section-head"><h2>Empresas destacadas</h2><a class="section-link" href="/destacadas">Ver todas ${icon('arrow')}</a></div>
         ${grid(ctx, featList)}
+        ${paginationNav(ctx, { page: 1, pages: feat.pages, baseHref: '/destacadas' })}
       </div>
     </section>
 

@@ -480,9 +480,15 @@ app.delete('/api/leads/:id', requireAuth, async (req, res) => {
 app.get('/api/placements/:context', requireAuth, (req, res) => {
   const pc = parseContext(req.params.context);
   if (!pc.valid) return res.status(400).json({ error: 'Contexto no válido' });
-  let items;
-  if (pc.kind === 'home') items = DB.getPlacements('home').map(p => DB.getBusiness(p.business_id)).filter(Boolean);
-  else items = DB.orderByContext(DB.listBusinesses(pc.filter), pc.context);
+  if (pc.kind !== 'home') {
+    // Nișă (± zonă/municipio): toate firmele în ordinea automată + pozițiile fixate
+    // (1-based). Panoul calculează paginile de 20 exact ca site-ul public.
+    const all = DB.listContextInfo(pc.context, pc.filter);
+    const inCtx = new Set(all.map(b => b.id));
+    const pins = DB.getPlacements(pc.context).filter(p => inCtx.has(p.business_id)).map(p => ({ id: p.business_id, pos: p.position + 1 }));
+    return ok(res, { context: pc.context, kind: pc.kind, pageSize: 20, total: all.length, pins, all });
+  }
+  const items = DB.getPlacements('home').map(p => DB.getBusiness(p.business_id)).filter(Boolean);
   const inSet = new Set(items.map(b => b.id));
   // Pentru „home", pool-ul de adăugat = căutare pe server (?q=), cele mai recenzate
   // întâi, max ~60 — NU toate cele (posibil) zeci de mii de negocios.
@@ -495,8 +501,13 @@ app.get('/api/placements/:context', requireAuth, (req, res) => {
 app.put('/api/placements/:context', requireAuth, async (req, res) => {
   const pc = parseContext(req.params.context);
   if (!pc.valid) return res.status(400).json({ error: 'Contexto no válido' });
-  const ids = Array.isArray(req.body && req.body.ids) ? req.body.ids : [];
-  DB.setPlacements(pc.context, ids);
+  const body = req.body || {};
+  // Nișe: { items: [{ id, pos }] } cu poziții absolute (1-based). Home: { ids } în ordine.
+  if (pc.kind !== 'home' && Array.isArray(body.items)) {
+    DB.setPlacementSlots(pc.context, body.items.map(x => ({ id: x && x.id, pos: (parseInt(x && x.pos, 10) || 1) - 1 })));
+  } else {
+    DB.setPlacements(pc.context, Array.isArray(body.ids) ? body.ids : []);
+  }
   return respondAfter(res, DB.persistPlacements(pc.context), { context: pc.context, count: DB.countPlacement(pc.context) });
 });
 app.delete('/api/placements/:context', requireAuth, async (req, res) => {

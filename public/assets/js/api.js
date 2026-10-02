@@ -45,6 +45,8 @@ DDM.api = (function () {
     // Placements / clasament manual (drag & drop)
     getPlacements: (context, q) => req('GET', '/api/placements/' + enc(context) + qs({ q })),
     setPlacements: (context, ids) => req('PUT', '/api/placements/' + enc(context), { ids }),
+    // Nișe: poziții fixe absolute [{ id, pos }] (pos 1-based; golurile se umplu automat).
+    setPlacementSlots: (context, items) => req('PUT', '/api/placements/' + enc(context), { items }),
     clearPlacements: context => req('DELETE', '/api/placements/' + enc(context)),
 
     // Taxonomía

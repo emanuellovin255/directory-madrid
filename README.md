@@ -74,6 +74,7 @@ node scripts/import-leads.js "/cale/Contractors Madrid.zip"             # import
 - Zona (`Area`) → distrito/municipio (+ barrio dacă există); urbanizațiile rămân ca text (`El Montecillo · Las Rozas de Madrid`).
 - Re-rulabil: firmele existente primesc doar categoriile lipsă (editările manuale nu se ating). Cu `DATABASE_URL` scrie direct în Supabase.
 - Din admin completezi oricând: **responsable**, **nr. membri echipă**, **descriere**, logo/fotos, iar butonul **⌂ Portada** pune firma pe prima pagină (ordinea din *Orden / Clasamentos → Home*).
+- **Orden / Clasamentos**: per nișă (± zonă/municipio) vezi paginile exact ca pe site (20/pagină) și fixezi orice firmă pe o **poziție absolută** (ex. nr. 45 = pagina 3); pozițiile libere se umplu automat. *Home* = Empresas destacadas: pagina 1 pe portadă (20), restul pe `/destacadas?page=N`.
 
 ---
 

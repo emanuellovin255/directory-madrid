@@ -385,6 +385,14 @@ function parseBusinessRow(r) {
     created_at: r.created_at != null ? r.created_at : null,
   };
 }
+/* Eticheta de zonă afișată: barrio · distrito, altfel zona liberă (urbanización) ·
+   municipio, altfel doar zona liberă (lead fără municipio). */
+function zoneLabel(area, district, neighborhood) {
+  const a = area && (!district || slugify(area) !== district.slug) ? area : '';
+  if (neighborhood) return neighborhood.name + (district ? ' · ' + district.name : '');
+  if (district) return a ? a + ' · ' + district.name : district.name;
+  return a;
+}
 function attachRelations(b) {
   if (!b) return null;
   b.district = b.district_id ? getDistrict(b.district_id) : null;
@@ -393,12 +401,7 @@ function attachRelations(b) {
     WHERE bc.business_id=? ORDER BY c.parent_id IS NOT NULL, c.name`).all(b.id).map(parseCategory);
   b.metros = db.prepare(`SELECT m.* FROM metros m JOIN business_metros bm ON bm.metro_id=m.id
     WHERE bm.business_id=? ORDER BY m.name`).all(b.id).map(parseMetro);
-  // șir „zonă" pentru afișare compactă: barrio · distrito, altfel zona liberă
-  // (urbanización) · municipio, altfel doar zona liberă (lead fără municipio).
-  const area = b.area && (!b.district || slugify(b.area) !== b.district.slug) ? b.area : '';
-  b.zone = b.neighborhood ? (b.neighborhood.name + (b.district ? ' · ' + b.district.name : ''))
-    : b.district ? (area ? area + ' · ' + b.district.name : b.district.name)
-    : area;
+  b.zone = zoneLabel(b.area, b.district, b.neighborhood);
   return b;
 }
 function setBusinessCategories(id, ids) {
@@ -641,8 +644,10 @@ function replaceAll(items) {
 
 /* ============================ PLACEMENTS ============================= */
 /* Clasament manual per „context": home | cat:<slug> | cat:<slug>:zona:<z> |
-   cat:<slug>:mun:<d>. Ordinea implicită e un shuffle determinist (hash), iar
-   placement-urile trec peste el pentru contextul lor. */
+   cat:<slug>:mun:<d>. Ordinea implicită e un shuffle determinist (hash).
+   `position` = SLOT ABSOLUT (0-based) în lista publică: o firmă fixată pe 44 apare
+   pe nr. 45 = pagina 3 (20/pagină), iar golurile dinainte se umplu automat cu
+   restul firmelor. Pentru „home" lista e doar cea fixată (pozițiile se compactează). */
 const _delPlac = db.prepare('DELETE FROM placements WHERE context=?');
 const _insPlac = db.prepare('INSERT OR REPLACE INTO placements (context, business_id, position) VALUES (?,?,?)');
 const _existsBiz = db.prepare('SELECT 1 FROM businesses WHERE id=?');
@@ -654,12 +659,22 @@ function countPlacement(context) {
   return db.prepare('SELECT COUNT(*) c FROM placements WHERE context=?').get(String(context || '')).c;
 }
 function setPlacements(context, ids) {
+  return setPlacementSlots(context, (ids || []).map((id, i) => ({ id, pos: i })));
+}
+/* Salvează poziții absolute: items = [{ id, pos }] (pos 0-based). Id-uri
+   inexistente / duplicate se ignoră; două firme pe același slot → a doua trece
+   pe următorul liber. */
+function setPlacementSlots(context, items) {
   const ctx = String(context || '');
+  const seen = new Set(), taken = new Set();
+  const list = (items || [])
+    .map(x => ({ id: String(x && x.id || ''), pos: Math.max(0, parseInt(x && x.pos, 10) || 0) }))
+    .filter(x => x.id && !seen.has(x.id) && seen.add(x.id) && _existsBiz.get(x.id))
+    .sort((a, b) => a.pos - b.pos);
   db.exec('BEGIN');
   try {
     _delPlac.run(ctx);
-    let pos = 0;
-    (ids || []).forEach(id => { const sid = String(id); if (_existsBiz.get(sid)) _insPlac.run(ctx, sid, pos++); });
+    list.forEach(x => { let p = x.pos; while (taken.has(p)) p++; taken.add(p); _insPlac.run(ctx, x.id, p); });
     db.exec('COMMIT');
   } catch (e) { try { db.exec('ROLLBACK'); } catch { /* ignoră */ } throw e; }
   bumpDataVersion();
@@ -683,18 +698,49 @@ function shuffleKey(id, context) {
   for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); }
   return h >>> 0;
 }
-/* Ordonează o listă de businesses pentru un context: pinned (din placements) întâi
-   în ordinea `position`, apoi restul după shuffle-ul determinist. */
+/* Ordinea automată (fără fixări): shuffle determinist per context. Decorate-sort:
+   cheia se calculează O(1) per item, nu de ~2× per comparație. */
+function autoSort(list, context) {
+  list.forEach(b => { b._sk = shuffleKey(b.id, context); });
+  return list.sort((a, b) => (a._sk - b._sk) || (a.name < b.name ? -1 : 1));
+}
+/* Ordonează o listă pentru un context: firmele fixate stau pe slotul lor absolut
+   (`position`), iar golurile se umplu cu restul în ordinea automată. Slot dincolo
+   de capătul listei → firma ajunge la final. */
 function orderByContext(list, context) {
   const posMap = new Map(getPlacements(context).map(p => [p.business_id, p.position]));
   const pinned = [], rest = [];
   (list || []).forEach(b => { (posMap.has(b.id) ? pinned : rest).push(b); });
   pinned.sort((a, b) => posMap.get(a.id) - posMap.get(b.id));
-  // decorate-sort: calculăm cheia de shuffle O(1) per item (nu de ~2× per
-  // comparație), ca sortarea a 16k+ rânduri să nu re-hasheze de sute de mii de ori.
-  rest.forEach(b => { b._sk = shuffleKey(b.id, context); });
-  rest.sort((a, b) => (a._sk - b._sk) || (a.name < b.name ? -1 : 1));
-  return pinned.concat(rest);
+  autoSort(rest, context);
+  const out = [];
+  let ri = 0;
+  for (const b of pinned) {
+    const slot = posMap.get(b.id);
+    while (out.length < slot && ri < rest.length) out.push(rest[ri++]);
+    out.push(b);
+  }
+  while (ri < rest.length) out.push(rest[ri++]);
+  return out;
+}
+/* Pentru panoul de ordine din admin: TOATE firmele unui context, compact
+   ({id, n: nume, z: zonă, r: reseñas, c: copertă scurtă}), în ordinea AUTOMATĂ
+   (fără fixări) — clientul pune fixările peste ea exact ca orderByContext. Fără
+   imagini inline (data: URL) ca răspunsul să rămână mic. */
+function listContextInfo(context, filter) {
+  const { joins, where, params, dead, grouped } = buildBusinessQuery(filter);
+  if (dead) return [];
+  const short = col => `CASE WHEN length(${col}) < 500 AND ${col} NOT LIKE 'data:%' THEN ${col} END`;
+  const firstPhoto = `CASE WHEN json_valid(b.photos) THEN json_extract(b.photos, '$[0]') END`;
+  const rows = db.prepare(`SELECT b.id, b.name, b.reviews, b.area, b.district_id, b.neighborhood_id,
+      COALESCE(${short('b.logo')}, ${short(firstPhoto)}, ${short('b.photo')}) AS cover
+    FROM businesses b ${joins} ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ${grouped ? 'GROUP BY b.id' : ''}`).all(...params);
+  const dist = new Map(listDistricts().map(d => [d.id, d]));
+  const barr = new Map(db.prepare('SELECT id, name FROM neighborhoods').all().map(n => [n.id, n]));
+  return autoSort(rows.map(r => ({ id: r.id, name: r.name, r })), context).map(({ id, name, r }) => ({
+    id, n: name, r: r.reviews || 0, c: r.cover || null,
+    z: zoneLabel(r.area, dist.get(r.district_id) || null, barr.get(r.neighborhood_id) || null),
+  }));
 }
 function paginate(items, page, pageSize) {
   const ps = pageSize || 20;
@@ -977,7 +1023,7 @@ module.exports = {
   // sitemap
   listBusinessSitemap, getSitemapCoverage,
   // placements / clasament
-  getPlacements, setPlacements, clearPlacements, countPlacement, setHomeMembership, homePositions, orderByContext, listForContext, listHome,
+  getPlacements, setPlacements, setPlacementSlots, clearPlacements, countPlacement, setHomeMembership, homePositions, listContextInfo, orderByContext, listForContext, listHome,
   // events / stats
   recordEvent, countEvents, clearEvents, getStats, getMonthlySeries,
   // leads
