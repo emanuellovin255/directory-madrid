@@ -209,6 +209,16 @@ p { margin: 0; }
 .card-media { position: relative; aspect-ratio: 4 / 3; overflow: hidden; background: var(--surface-2); }
 .card-media img { width: 100%; height: 100%; object-fit: cover; transition: transform .4s ease; }
 .card:hover .card-media img { transform: scale(1.06); }
+/* Placeholder sin foto (iniciales + servicio), sustituye al SVG inline */
+.ph {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .55em;
+  width: 100%; height: 100%; min-height: 100%;
+  background: linear-gradient(135deg, var(--accent) 0%, #7a0a1c 100%); color: #fff;
+  font-family: Arial, Helvetica, sans-serif; text-align: center; user-select: none;
+}
+.ph b { font-size: clamp(2.2rem, 7vw, 3.6rem); font-weight: 700; line-height: 1; letter-spacing: .02em; }
+.ph small { font-size: .72rem; letter-spacing: .18em; text-transform: uppercase; opacity: .75; padding: 0 12px; }
+.biz-media .ph b { font-size: clamp(3rem, 9vw, 5.5rem); }
 .badge-featured {
   position: absolute; top: 10px; left: 10px; z-index: 2;
   background: rgba(15,23,42,.82); color: #fff; backdrop-filter: blur(4px);
@@ -597,10 +607,21 @@ main { display: block; }
 .hero-bg {
   position: absolute; inset: 0; z-index: 0;
   /* Foto real de Madrid (Gran Vía). El degradado oscuro garantiza contraste del texto. */
+  /* WebP (156 KB; 72 KB en móvil) en vez del JPEG de 475 KB; precargada en la portada. */
   background-image:
     linear-gradient(180deg, rgba(20,5,9,.44) 0%, rgba(20,5,9,.5) 45%, rgba(20,5,9,.8) 100%),
     url("/assets/img/hero-madrid.jpg");
+  background-image:
+    linear-gradient(180deg, rgba(20,5,9,.44) 0%, rgba(20,5,9,.5) 45%, rgba(20,5,9,.8) 100%),
+    image-set(url("/assets/img/hero-madrid.webp") type("image/webp"), url("/assets/img/hero-madrid.jpg") type("image/jpeg"));
   background-size: cover, cover; background-position: center, center; background-repeat: no-repeat;
+}
+@media (max-width: 900px) {
+  .hero-bg {
+    background-image:
+      linear-gradient(180deg, rgba(20,5,9,.44) 0%, rgba(20,5,9,.5) 45%, rgba(20,5,9,.8) 100%),
+      image-set(url("/assets/img/hero-madrid-900.webp") type("image/webp"), url("/assets/img/hero-madrid.jpg") type("image/jpeg"));
+  }
 }
 .hero-inner { position: relative; z-index: 1; padding-block: 78px 40px; text-align: center; color: #fff; }
 @media (max-width: 640px) { .hero-inner { padding-block: 44px 26px; } }

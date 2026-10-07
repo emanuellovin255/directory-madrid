@@ -15,6 +15,8 @@
                  con varias categorías.
    • Idempotente: si la empresa ya existe, solo se le añaden las categorías que
                  falten (no se tocan descripción, fotos, etc. editados a mano).
+   • Fuera de Madrid → se omiten (fijo de otra provincia, etiqueta de fuera de la
+                 Comunidad…); misma regla que scripts/prune-outside.js.
 
    Uso:
      node scripts/import-leads.js <carpeta | archivo.zip | archivo.csv …> [opciones]
@@ -41,6 +43,7 @@ const { execFileSync } = require('node:child_process');
 })(path.join(__dirname, '..', '.env'));
 
 const DB = require('../server/db');
+const { outsideMadrid } = require('./prune-outside');
 const { seedIfEmpty, ensureCategories, ensureMunicipios, DEMO_BUSINESSES } = require('../server/seed');
 
 const args = process.argv.slice(2);
@@ -346,6 +349,14 @@ async function main() {
     rec.geo = best || { districtId: null, neighborhoodId: null, area: '', via: 'sin-zona' };
   }
 
+  /* 3b) Fuera de la Comunidad de Madrid → no se importan (el scraper empareja
+     «Salamanca», «La Acebeda»… con negocios de otras provincias). */
+  const outside = outsideMadrid([...records.values()].map(rec => {
+    const d = rec.geo.districtId ? geo.byId.get(rec.geo.districtId) : null;
+    const label = strict(rec.geo.area);
+    return { id: rec.key, phone: rec.phone, zone: d ? d.slug : (label ? 'area:' + label : null), label: d ? '' : label };
+  }));
+
   /* 4) Escribir (transacción; en --dry-run se deshace). */
   if (!DRY && !DB.persistenceEnabled()) {
     const file = DB.db.prepare('PRAGMA database_list').all().find(x => x.name === 'main');
@@ -372,6 +383,7 @@ async function main() {
       }
     }
     for (const rec of records.values()) {
+      if (outside.has(rec.key)) { stats.outside = (stats.outside || 0) + 1; continue; }
       const catIds = [...rec.cats].map(s => catIdBySlug.get(s)).filter(Boolean);
       stats.via[rec.geo.via] = (stats.via[rec.geo.via] || 0) + 1;
       if (!rec.geo.districtId && rec.geo.area) unresolved.set(rec.geo.area, (unresolved.get(rec.geo.area) || 0) + 1);
@@ -407,6 +419,7 @@ async function main() {
   console.log(`\n${DRY ? '🧪 SIMULACIÓN (no se ha guardado nada)' : '✅ Importación completada'}`);
   console.log(`   Archivos: ${files.length} · filas: ${rowsRead} · empresas únicas: ${records.size}`);
   console.log(`   Nuevas: ${stats.inserted} · ya existían: ${stats.merged} (+${stats.catLinksAdded} categorías) · demo eliminados: ${stats.demoRemoved}`);
+  if (stats.outside) console.log(`   Omitidas por estar fuera de la Comunidad de Madrid: ${stats.outside}`);
   console.log('   Zona resuelta por:');
   Object.entries(stats.via).sort((a, b) => b[1] - a[1]).forEach(([k, n]) => console.log(`     ${String(n).padStart(6)}  ${VIA[k] || k}`));
   const top = [...unresolved.entries()].sort((a, b) => b[1] - a[1]).slice(0, 25);

@@ -180,6 +180,7 @@ app.use(cookieSession({
   secret: SESSION_SECRET,
   httpOnly: true,
   sameSite: 'lax',
+  secure: !!process.env.VERCEL,   // pe Vercel totul e HTTPS (trust proxy) → cookie doar pe HTTPS
   maxAge: 30 * 24 * 60 * 60 * 1000,
 }));
 
@@ -265,8 +266,17 @@ function requireAuthOrToken(req, res, next) {
   return res.status(401).json({ error: 'No autorizado' });
 }
 const ok = (res, data) => res.json(data);
-function ctx(req) { return { origin: SITE_URL || (req.protocol + '://' + req.get('host')), path: req.path }; }
-function sendHtml(res, html, status) { res.status(status || 200).type('html').send(html); }
+/* Contextul de randare. `reqPage` = ?page= brut (listările dau 404 dacă nu există
+   pagina); randarea poate pune `status` (ex. 404) pe care sendHtml îl respectă. */
+function ctx(req) {
+  const c = { origin: SITE_URL || (req.protocol + '://' + req.get('host')), path: req.path, reqPage: req.query.page };
+  req._rmCtx = c;
+  return c;
+}
+function sendHtml(res, html, status) {
+  const c = res.req && res.req._rmCtx;
+  res.status(status || (c && c.status) || 200).type('html').send(html);
+}
 
 /* Rate-limiter simplu, in-memory (per-instanță). Suficient pentru a încetini
    brute-force/spam; pe serverless memoria e per-instanță, dar tot ajută. */
@@ -485,6 +495,9 @@ app.post('/api/extract', requireAuth, async (req, res) => {
 });
 
 /* ---------------------------- Analytics ------------------------------- */
+/* Sin estadísticas propias (producción) → no hacemos nada ni tocamos la sesión:
+   antes se ponía la cookie rm_sess a cada visitante sin consentimiento. */
+app.use('/api/track', (req, res, next) => (DB.INTERNAL_STATS ? next() : res.status(204).end()));
 app.post('/api/track/visit', (req, res) => {
   const nowMs = Date.now();
   const last = (req.session && req.session.lastVisit) || 0;
@@ -496,7 +509,7 @@ app.post('/api/track/contact', (req, res) => {
   const type = req.body && req.body.type === 'web' ? 'contact_web' : 'contact_phone';
   DB.recordEvent(type); ok(res, { ok: true });
 });
-app.get('/api/stats', requireAuth, (req, res) => ok(res, DB.getStats()));
+app.get('/api/stats', requireAuth, (req, res) => ok(res, DB.INTERNAL_STATS ? DB.getStats() : { disabled: true }));
 app.post('/api/analytics/reset', requireAuth, (req, res) => { DB.clearEvents(); seedIfEmpty(); ok(res, DB.getStats()); });
 
 /* ------------------------------- Leads -------------------------------- */

@@ -647,6 +647,11 @@
     let s;
     try { s = await api.stats(); }
     catch (e) { if (e.status === 401) location.replace('login.html'); return; }
+    if (s.disabled) {
+      $('#statRow').innerHTML = '<p class="muted">En producción las visitas no se guardan en la base de datos: se miden con Plausible o Google Analytics (variables PLAUSIBLE_DOMAIN o GA4_ID). Los clics de llamada y web llegan allí como eventos «click_phone» y «click_web».</p>';
+      $('#chart').innerHTML = ''; $('#topList').innerHTML = '';
+      return;
+    }
     const t = s.totals;
     $('#statRow').innerHTML =
       statCard('teal', IC.users, t.total, 'Visitas totales', t.growth != null ? `${t.growth >= 0 ? '▲' : '▼'} ${Math.abs(t.growth)}% vs. mes anterior` : '', t.growth >= 0) +

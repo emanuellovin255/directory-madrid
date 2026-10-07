@@ -10,6 +10,9 @@ const DB = require('./db');
 const PRO = require('./content/profesionales');
 const { CATEGORIAS } = require('./content/categorias');
 const { DISTRITOS } = require('./content/distritos');
+const { MUNICIPIOS } = require('./content/municipios');
+/* Nota local (distrito de la capital o municipio con texto propio), o null. */
+const placeNote = slug => DISTRITOS[slug] || MUNICIPIOS[slug] || null;
 const { PRECIOS, UPDATED: PRECIOS_UPDATED } = require('./content/precios');
 const { GUIAS } = require('./content/guias');
 const precioBySlug = slug => PRECIOS.find(x => x.slug === slug) || null;
@@ -47,7 +50,21 @@ function esc(s) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 const attr = esc;
-function abs(ctx, p) { return (ctx && ctx.origin ? ctx.origin : '') + p; }
+/* URL absolută. Imaginile din Supabase Storage sunt deja absolute → se lasă așa
+   (altfel ieșea „https://site.eshttps://xxx.supabase.co/…"). */
+function abs(ctx, p) {
+  p = String(p == null ? '' : p);
+  if (/^(https?:)?\/\//i.test(p)) return p;
+  return (ctx && ctx.origin ? ctx.origin : '') + p;
+}
+/* Imagine pentru og:image / JSON-LD: absolută, niciodată data: URL (pe Vercel fără
+   Storage pozele sunt base64 inline → ar umple meta tag-ul cu megabytes). */
+function absImg(ctx, src) { return src && !/^data:/i.test(src) ? abs(ctx, src) : undefined; }
+/* JSON într-un <script>: fără `<` literal → un nume sau o descriere cu
+   „</script>" nu poate ieși din tag (XSS stocat via JSON-LD). */
+function jsonScript(o) {
+  return JSON.stringify(o).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
+}
 function tel(s) { return String(s || '').replace(/[^\d+]/g, ''); }
 function titleCase(s) { return String(s || ''); }
 
@@ -60,6 +77,10 @@ function zonaName(slug) { const z = (DB.ZONES || []).find(x => x.slug === slug);
    reales (no de una lista fija), así el copy no se queda viejo al añadir servicios.
    `max` recorta para títulos/meta descriptions: „…, cerrajeros y más". */
 function ucFirst(s) { s = String(s || ''); return s.charAt(0).toUpperCase() + s.slice(1); }
+/* Sustantivo para contar/nombrar profesionales de una categoría: «18 fontaneros»,
+   pero «18 empresas de control de plagas» (no «18 control de plagas»). */
+const PLURAL_PRO = new Set(['fontaneros', 'electricistas', 'cerrajeros', 'talleres']);
+function proNoun(cat) { const n = String(cat && cat.name || '').toLowerCase(); return cat && PLURAL_PRO.has(cat.slug) ? n : 'empresas de ' + n; }
 function servicesPhrase(max) {
   const names = DB.getCategoryTree().map(c => c.name.toLowerCase());
   if (max && names.length > max) return names.slice(0, max).join(', ') + ' y más';
@@ -88,25 +109,28 @@ function hasMetroData() { return DB.coverage().metro.size > 0; }
 function verifiedBadge() { return `<span class="badge-verified" title="Ficha reclamada por el negocio y verificada por nuestro equipo">${icon('check')}Verificado</span>`; }
 function sponsoredBadge() { return `<span class="badge-featured" title="Espacio patrocinado">${icon('star')}Patrocinado</span>`; }
 
-function svgPlaceholder(name, label) {
-  // Primera letra/cifra de cada palabra (no `w[0]`: con un emoji delante sale medio
-  // par sustituto y encodeURIComponent lanza URIError → la página daba 500).
-  const initials = String(name || '?').split(/\s+/).map(w => (w.match(/[\p{L}\p{N}]/u) || [''])[0])
+/* Placeholder sin imagen: iniciales + servicio, dibujado con CSS (.ph). Antes era
+   un SVG en data: URI de ~1 KB repetido en cada tarjeta (≈20 KB por listado). */
+function initialsOf(name) {
+  // Primera letra/cifra de cada palabra (no `w[0]`: un emoji delante daba medio par sustituto).
+  return String(name || '?').split(/\s+/).map(w => (w.match(/[\p{L}\p{N}]/u) || [''])[0])
     .filter(Boolean).slice(0, 2).join('').toUpperCase() || '?';
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="420"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#c8102e"/><stop offset="1" stop-color="#7a0a1c"/></linearGradient></defs><rect width="640" height="420" fill="url(#g)"/><text x="50%" y="46%" fill="rgba(255,255,255,.95)" font-family="Arial,Helvetica,sans-serif" font-size="120" font-weight="700" text-anchor="middle" dominant-baseline="middle">${esc(initials)}</text><text x="50%" y="73%" fill="rgba(255,255,255,.72)" font-family="Arial,Helvetica,sans-serif" font-size="24" letter-spacing="3" text-anchor="middle">${esc(String(label || SITE.name).toUpperCase())}</text></svg>`;
-  return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
 }
-function bizPhoto(b) {
-  if (b.photo) return b.photo;
-  const primary = (b.categories || []).find(c => !c.parent_id) || (b.categories || [])[0];
-  return svgPlaceholder(b.name, primary ? primary.name : SITE.name);
+function placeholder(name, label) {
+  return `<span class="ph" aria-hidden="true"><b>${esc(initialsOf(name))}</b><small>${esc(String(label || SITE.name))}</small></span>`;
 }
-/* Imaginea de copertă a cardului: prima poză de servicii, apoi `photo`, apoi placeholder. */
-function bizCover(b) {
-  if (b.photos && b.photos.length) return b.photos[0];
-  return bizPhoto(b);
+function primaryCat(b) { return (b.categories || []).find(c => !c.parent_id) || (b.categories || [])[0] || null; }
+/* Imaginea de copertă: prima poză de servicii, apoi `photo`; null → placeholder. */
+function bizCover(b) { return (b.photos && b.photos[0]) || b.photo || null; }
+function bizCoverHtml(b, cls, lazy) {
+  const src = bizCover(b);
+  if (!src) { const p = primaryCat(b); return placeholder(b.name, p ? p.name : SITE.name); }
+  return `<img${cls ? ` class="${cls}"` : ''} src="${attr(src)}" alt="${attr(b.name)}"${lazy ? ' loading="lazy"' : ''} />`;
 }
 function bizLogo(b) { return b.logo || null; }
+/* Zona visible; sin municipio ni etiqueta útil → «Comunidad de Madrid» (no «Madrid»,
+   que daría a entender la capital). */
+function zoneText(b) { return (b && b.zone) || 'Comunidad de Madrid'; }
 function fmtInt(n) { return Number(n || 0).toLocaleString('es-ES'); }
 function reviewsLabel(n) { return `${fmtInt(n)} ${Number(n) === 1 ? 'reseña' : 'reseñas'}`; }
 /* Horario „gol" (toate zilele Cerrado/necompletate, ex. leads importate) → nu-l afișăm. */
@@ -306,12 +330,12 @@ function businessCard(ctx, b) {
         ${b.featured ? sponsoredBadge() : ''}
         ${b.rating ? `<span class="card-rating">${icon('star')}${b.rating.toFixed(1)}</span>` : ''}
         ${bizLogo(b) ? `<span class="card-logo"><img src="${attr(bizLogo(b))}" alt="${attr(b.name)} logo" loading="lazy" /></span>` : ''}
-        <img class="card-cover" src="${attr(bizCover(b))}" alt="${attr(b.name)}" loading="lazy" />
+        ${bizCoverHtml(b, 'card-cover', true)}
       </a>
       <div class="card-body">
         <h3 class="card-title"><a href="${href}">${esc(b.name)}</a></h3>
         ${b.claimed || DB.storyBusinessIds().has(b.id) ? `<div class="card-badges">${b.claimed ? verifiedBadge() : ''}${DB.storyBusinessIds().has(b.id) ? '<span class="badge-story">Historia</span>' : ''}</div>` : ''}
-        <span class="card-zone">${icon('pin')}${esc(b.zone || 'Madrid')}</span>
+        <span class="card-zone">${icon('pin')}${esc(zoneText(b))}</span>
         ${!b.rating && b.reviews ? `<span class="card-reviews">${icon('star')}${reviewsLabel(b.reviews)}</span>` : ''}
         <div class="card-tags">${tags}${more}</div>
         <div class="card-foot"><a class="card-cta" href="${href}">Ver ficha ${icon('arrow')}</a></div>
@@ -494,6 +518,11 @@ function cookieBanner() {
 }
 
 /* ------------------------------ Layout ------------------------------- */
+/* window.__RM__ para site.js. `stats` = medir visitas en la base propia (solo local). */
+function rmData(extra) {
+  const d = Object.assign({}, extra || {}, DB.INTERNAL_STATS ? { stats: 1 } : {});
+  return Object.keys(d).length ? `<script>window.__RM__=${jsonScript(d)};</script>` : '';
+}
 /* La organización detrás del directorio (una vez por página; el resto de
    bloques la referencian por @id). Listo247 figura como matriz: es público. */
 function orgJsonLd(ctx) {
@@ -533,7 +562,8 @@ ${page.next ? `<link rel="next" href="${attr(page.next)}">` : ''}
 <link rel="apple-touch-icon" href="/favicon.svg">
 <link rel="mask-icon" href="/favicon.svg" color="#c8102e">
 <link rel="stylesheet" href="/assets/css/styles.css">
-${jsonLd.map(j => `<script type="application/ld+json">${JSON.stringify(j)}</script>`).join('\n')}
+${page.headExtra || ''}
+${jsonLd.map(j => `<script type="application/ld+json">${jsonScript(j)}</script>`).join('\n')}
 </head>
 <body class="${page.bodyClass || ''}">
 ${renderHeader(ctx)}
@@ -541,7 +571,7 @@ ${renderHeader(ctx)}
 ${renderFooter(ctx)}
 ${analyticsSnippet()}
 ${cookieBanner()}
-${page.inlineData ? `<script>window.__RM__=${JSON.stringify(page.inlineData)};</script>` : ''}
+${rmData(page.inlineData)}
 <script src="/assets/js/ui.js"></script>
 <script src="/assets/js/api.js"></script>
 <script src="/assets/js/site.js"></script>
@@ -582,17 +612,33 @@ function listingPage(ctx, opts) {
     </div>`;
   const onPageN = pg && pg.page > 1;
   const canonical = onPageN ? opts.canonical + '?page=' + pg.page : opts.canonical;
+  // ?page= inexistent (0, «abc», 999 > total) → 404 en vez de repetir la última página.
+  const rp = ctx && ctx.reqPage != null ? String(ctx.reqPage) : '';
+  if (pg && rp && !(/^\d+$/.test(rp) && Number(rp) === pg.page)) { ctx.status = 404; return render404(ctx); }
   return renderLayout(ctx, {
     title: onPageN ? opts.title.replace(' | ', ` — página ${pg.page} | `) : opts.title,
-    description: opts.description, canonical,
+    description: onPageN ? `Página ${pg.page} de ${pg.pages}. ${opts.description}` : opts.description,
+    canonical,
     // Anti-thin content: paginile de listare cu sub MIN_LISTING negocios → noindex,follow
     // (aceeași regulă ca sitemap-ul; păstrăm crawl-ul link-urilor interne).
-    robots: total < MIN_LISTING ? 'noindex,follow' : undefined,
+    robots: opts.robots || (total < MIN_LISTING ? 'noindex,follow' : undefined),
     prev: pg && pg.page > 1 ? abs(ctx, pageHref(pg.baseHref, pg.page - 1)) : null,
     next: pg && pg.page < pg.pages ? abs(ctx, pageHref(pg.baseHref, pg.page + 1)) : null,
     jsonLd: [jsonLdBreadcrumb(ctx, opts.crumbs), businesses.length ? jsonLdItemList(ctx, businesses) : null].concat(opts.jsonLd || []),
     body,
   });
+}
+
+/* Title/description de un listado con su número real de empresas: en Google
+   destaca más «Fontaneros en Getafe: 18 empresas» que un texto de plantilla.
+   Por debajo del umbral (página noindex) no se presume de cifra. */
+function countTitle(base, n) {
+  return n >= MIN_LISTING ? `${base}: ${fmtInt(n)} ${n === 1 ? 'empresa' : 'empresas'} | ${SITE.name}` : `${base} | ${SITE.name}`;
+}
+function countDesc(n, what, where) {
+  return n >= MIN_LISTING
+    ? `Compara ${fmtInt(n)} ${what} en ${where}: teléfono, web y reseñas en Google. Pide presupuesto gratis y sin compromiso.`
+    : `${ucFirst(what)} en ${where}. Pide presupuesto gratis y sin compromiso a profesionales de la zona.`;
 }
 
 /* Fecha legible «octubre de 2026» a partir de 'YYYY-MM-DD'. */
@@ -618,7 +664,7 @@ function categoryContent(category) {
   if (!c) return { html: '', faq: [] };
   const html = `<section class="cat-content">
       <div class="cat-content-main">
-        <h2>Cómo elegir ${esc(category.name.toLowerCase())} en Madrid</h2>
+        <h2>Cómo elegir ${esc(proNoun(category))} en Madrid</h2>
         ${c.intro.map(t => `<p>${esc(t)}</p>`).join('')}
         <h3>Qué comprobar antes de contratar</h3>
         <ul class="checklist">${c.checklist.map(t => `<li>${icon('check')}<span>${esc(t)}</span></li>`).join('')}</ul>
@@ -633,14 +679,14 @@ function categoryContent(category) {
    servicio por tipo de vivienda + datos reales del directorio. */
 function localContent(category, district) {
   const c = CATEGORIAS[category.slug];
-  const d = DISTRITOS[district.slug];
+  const d = placeNote(district.slug);
   const st = DB.contextStats({ categorySlug: category.slug, districtSlug: district.slug });
   if (!st.total) return '';
   const barrios = covered(DB.listNeighborhoods(district.id).map(b => ({ name: b.name, href: `/${category.slug}/${district.slug}/${b.slug}`, n: covCount('catBar', category.slug + '|' + district.slug + '|' + b.slug) })))
     .sort((a, b) => b.count - a.count).slice(0, 5);
   const where = district.kind === 'municipio' ? district.name : 'el distrito de ' + district.name;
   const facts = [
-    `En el directorio hay <b>${fmtInt(st.total)}</b> ${esc(category.name.toLowerCase())} en ${esc(where)}${st.withWeb ? `; <b>${fmtInt(st.withWeb)}</b> tienen web propia` : ''}${st.claimed ? ` y <b>${fmtInt(st.claimed)}</b> están verificados` : ''}.`,
+    `En el directorio hay <b>${fmtInt(st.total)}</b> ${esc(proNoun(category))} en ${esc(where)}${st.withWeb ? `; <b>${fmtInt(st.withWeb)}</b> tienen web propia` : ''}${st.claimed ? ` y <b>${fmtInt(st.claimed)}</b> están verificados` : ''}.`,
     st.reviews ? `Entre todos suman <b>${fmtInt(st.reviews)}</b> reseñas en Google.` : '',
     barrios.length ? `Los barrios con más profesionales son ${barrios.map(b => `<a href="${attr(b.href)}">${esc(b.name)}</a> (${b.count})`).join(', ')}.` : '',
   ].filter(Boolean);
@@ -673,8 +719,8 @@ function renderCategory(ctx, category, page) {
   if (category.parent_id) { const p = DB.getCategory(category.parent_id); if (p) crumbs.push({ name: p.name, href: `/${p.slug}` }); }
   crumbs.push({ name: category.name });
   return listingPage(ctx, {
-    title: `${category.name} en Madrid — presupuestos y opiniones | ${SITE.name}`,
-    description: category.intro || `Encuentra ${category.name.toLowerCase()} en Madrid por distrito, barrio y municipio. Compara profesionales, reseñas y contacto directo.`,
+    title: countTitle(`${category.name} en Madrid`, r.total),
+    description: countDesc(r.total, proNoun(category), 'la Comunidad de Madrid'),
     canonical: abs(ctx, `/${category.slug}`),
     h1: `${category.name} en Madrid`,
     intro: category.intro,
@@ -685,7 +731,7 @@ function renderCategory(ctx, category, page) {
     storiesHtml: storyStrip(ctx, `Conoce a los profesionales: ${category.name.toLowerCase()}`, DB.listStories({ status: 'published', categorySlug: category.slug, limit: 3 }), '/historias?categoria=' + category.slug),
     contentHtml: r.page > 1 ? '' : catContent.html,
     jsonLd: r.page > 1 ? [] : [faqJsonLd(catContent.faq)],
-    emptyMsg: `Aún no hay ${category.name.toLowerCase()} listados. Vuelve pronto.`,
+    emptyMsg: `Aún no hay ${proNoun(category)} en el directorio. Vuelve pronto.`,
   });
 }
 
@@ -703,8 +749,8 @@ function renderDistrict(ctx, category, district, page) {
     chipRow(`Otros servicios en ${district.name}`, covered(DB.getCategoryTree().filter(c => c.id !== category.id).map(c => ({ name: c.name, href: `/${c.slug}/${district.slug}`, n: covCount('catMun', c.slug + '|' + district.slug) })))),
   ];
   return listingPage(ctx, {
-    title: `${category.name} en ${district.name} (Madrid) | ${SITE.name}`,
-    description: `${category.name} en ${geoIn(district)}, Comunidad de Madrid. Profesionales cercanos con opiniones y contacto directo${isMuni ? '' : ', por barrios'}.`,
+    title: countTitle(`${category.name} en ${district.name} (Madrid)`, r.total),
+    description: countDesc(r.total, proNoun(category), isMuni ? district.name : `el distrito de ${district.name} (Madrid)`),
     canonical: abs(ctx, `/${category.slug}/${district.slug}`),
     h1: `${category.name} en ${district.name}`,
     intro: isMuni
@@ -716,7 +762,7 @@ function renderDistrict(ctx, category, district, page) {
     related,
     storiesHtml: storyStrip(ctx, `Conoce a los profesionales de ${district.name}`, DB.listStories({ status: 'published', categorySlug: category.slug, districtSlug: district.slug, limit: 3 })),
     contentHtml: r.page > 1 ? '' : localContent(category, district),
-    emptyMsg: `Aún no hay ${category.name.toLowerCase()} listados en ${district.name}.`,
+    emptyMsg: `Aún no hay ${proNoun(category)} en ${district.name}.`,
   });
 }
 
@@ -729,8 +775,8 @@ function renderBarrio(ctx, category, district, barrio, page) {
     chipRow(`${category.name} en todo ${district.name}`, covered([{ name: `${category.name} en ${district.name}`, href: `/${category.slug}/${district.slug}`, n: covCount('catMun', category.slug + '|' + district.slug) }])),
   ];
   return listingPage(ctx, {
-    title: `${category.name} en ${barrio.name}, ${district.name} (Madrid) | ${SITE.name}`,
-    description: `${category.name} en ${barrio.name} (${district.name}, Madrid). Encuentra un profesional cerca de casa con opiniones y contacto.`,
+    title: countTitle(`${category.name} en ${barrio.name}, ${district.name}`, r.total),
+    description: countDesc(r.total, proNoun(category), `${barrio.name} (${district.name}, Madrid)`),
     canonical: abs(ctx, `/${category.slug}/${district.slug}/${barrio.slug}`),
     h1: `${category.name} en ${barrio.name}`,
     intro: `${category.name} en el barrio de ${barrio.name} (${district.name}). Profesionales de proximidad.`,
@@ -738,7 +784,7 @@ function renderBarrio(ctx, category, district, barrio, page) {
     businesses: r.items, total: r.total,
     pagination: { page: r.page, pages: r.pages, baseHref: `/${category.slug}/${district.slug}/${barrio.slug}` },
     related,
-    emptyMsg: `Aún no hay ${category.name.toLowerCase()} listados en ${barrio.name}.`,
+    emptyMsg: `Aún no hay ${proNoun(category)} en ${barrio.name}.`,
   });
 }
 
@@ -752,8 +798,8 @@ function renderCategoryMetro(ctx, category, metro, page) {
   ];
   const lines = (metro.lines || []).length ? ` (líneas ${metro.lines.join(', ')})` : '';
   return listingPage(ctx, {
-    title: `${category.name} cerca de ${metro.name} (metro) | ${SITE.name}`,
-    description: `${category.name} cerca de la estación de metro ${metro.name}${lines} en Madrid. Encuentra un profesional a pocos minutos.`,
+    title: countTitle(`${category.name} cerca del metro ${metro.name}`, r.total),
+    description: countDesc(r.total, proNoun(category), `los alrededores del metro ${metro.name}${lines}`),
     canonical: abs(ctx, `/${category.slug}/metro/${metro.slug}`),
     h1: `${category.name} cerca de ${metro.name}`,
     intro: `Profesionales de ${category.name.toLowerCase()} cerca de la estación de metro ${metro.name}${lines}.`,
@@ -761,7 +807,7 @@ function renderCategoryMetro(ctx, category, metro, page) {
     businesses: r.items, total: r.total,
     pagination: { page: r.page, pages: r.pages, baseHref: `/${category.slug}/metro/${metro.slug}` },
     related,
-    emptyMsg: `Aún no hay ${category.name.toLowerCase()} listados cerca de ${metro.name}.`,
+    emptyMsg: `Aún no hay ${proNoun(category)} cerca de ${metro.name}.`,
   });
 }
 
@@ -775,8 +821,8 @@ function renderCategoryZona(ctx, category, zona, page) {
     chipRow(`${category.name} en otras zonas`, covered(otherZones.map(z => ({ name: z.name, href: `/${category.slug}/zona/${z.slug}`, n: covCount('catZona', category.slug + '|' + z.slug) })))),
   ];
   return listingPage(ctx, {
-    title: `${category.name} en la zona ${zona.name} de Madrid | ${SITE.name}`,
-    description: `${category.name} en los municipios de la zona ${zona.name} de la Comunidad de Madrid. Compara profesionales, opiniones y contacto directo.`,
+    title: countTitle(`${category.name} en la zona ${zona.name} de Madrid`, r.total),
+    description: countDesc(r.total, proNoun(category), `los municipios de la zona ${zona.name} de la Comunidad de Madrid`),
     canonical: abs(ctx, `/${category.slug}/zona/${zona.slug}`),
     h1: `${category.name} en la zona ${zona.name}`,
     intro: `Profesionales de ${category.name.toLowerCase()} en los municipios de la zona ${zona.name} de la Comunidad de Madrid.`,
@@ -784,7 +830,7 @@ function renderCategoryZona(ctx, category, zona, page) {
     businesses: r.items, total: r.total,
     pagination: { page: r.page, pages: r.pages, baseHref: `/${category.slug}/zona/${zona.slug}` },
     related,
-    emptyMsg: `Aún no hay ${category.name.toLowerCase()} listados en la zona ${zona.name}.`,
+    emptyMsg: `Aún no hay ${proNoun(category)} en la zona ${zona.name}.`,
   });
 }
 
@@ -804,8 +850,10 @@ function renderZoneDistrict(ctx, district, page) {
   if (isMuni) crumbs.push({ name: zonaName(district.zona), href: `/zonas#${district.zona}` });
   crumbs.push({ name: district.name });
   return listingPage(ctx, {
-    title: `Empresas y profesionales en ${district.name} (Madrid) | ${SITE.name}`,
-    description: `Directorio de ${servicesPhrase(5)} en ${geoIn(district)}, Comunidad de Madrid.`,
+    title: countTitle(`Profesionales en ${district.name} (Madrid)`, r.total),
+    description: r.total >= MIN_LISTING
+      ? `${fmtInt(r.total)} empresas de ${servicesPhrase(5)} en ${geoIn(district)}. Teléfono, web y presupuesto gratis.`
+      : `Directorio de ${servicesPhrase(5)} en ${geoIn(district)}, Comunidad de Madrid.`,
     canonical: abs(ctx, `/zona/${district.slug}`),
     h1: `Profesionales en ${district.name}`,
     intro: `Profesionales en ${geoIn(district)}: ${servicesPhrase()}.`,
@@ -813,6 +861,10 @@ function renderZoneDistrict(ctx, district, page) {
     businesses: r.items, total: r.total,
     pagination: { page: r.page, pages: r.pages, baseHref: `/zona/${district.slug}` },
     related,
+    contentHtml: r.page > 1 || !placeNote(district.slug) ? '' : `<section class="local-content">
+      <h2>${esc(district.name)}: lo que conviene saber</h2>
+      <p>${esc(placeNote(district.slug).nota)}</p>
+    </section>`,
     emptyMsg: `Aún no hay empresas listadas en ${district.name}.`,
   });
 }
@@ -825,8 +877,10 @@ function renderZoneBarrio(ctx, district, barrio, page) {
     chipRow(`Otros barrios de ${district.name}`, covered(DB.listNeighborhoods(district.id).filter(b => b.id !== barrio.id).map(b => ({ name: b.name, href: `/zona/${district.slug}/${b.slug}`, n: covCount('bar', district.slug + '|' + b.slug) })))),
   ];
   return listingPage(ctx, {
-    title: `Empresas y profesionales en ${barrio.name}, ${district.name} | ${SITE.name}`,
-    description: `Profesionales en ${barrio.name} (${district.name}, Madrid): ${servicesPhrase(5)}.`,
+    title: countTitle(`Profesionales en ${barrio.name}, ${district.name}`, r.total),
+    description: r.total >= MIN_LISTING
+      ? `${fmtInt(r.total)} empresas de ${servicesPhrase(5)} en ${barrio.name} (${district.name}, Madrid). Teléfono, web y presupuesto gratis.`
+      : `Profesionales en ${barrio.name} (${district.name}, Madrid): ${servicesPhrase(5)}.`,
     canonical: abs(ctx, `/zona/${district.slug}/${barrio.slug}`),
     h1: `Profesionales en ${barrio.name}`,
     intro: `Profesionales en el barrio de ${barrio.name} (${district.name}): ${servicesPhrase()}.`,
@@ -900,7 +954,7 @@ function renderMetroHub(ctx, metro, page) {
   const lines = (metro.lines || []).length ? ` (líneas ${metro.lines.join(', ')})` : '';
   const related = [chipRow(`Servicios cerca de ${metro.name}`, covered(cats.map(c => ({ name: c.name, href: `/${c.slug}/metro/${metro.slug}`, n: covCount('catMetro', c.slug + '|' + metro.slug) }))))];
   return listingPage(ctx, {
-    title: `Profesionales cerca de ${metro.name} (metro Madrid) | ${SITE.name}`,
+    title: countTitle(`Profesionales cerca del metro ${metro.name}`, r.total),
     description: `Empresas de ${servicesPhrase(5)} cerca de la estación ${metro.name}${lines}.`,
     canonical: abs(ctx, `/metro/${metro.slug}`),
     h1: `Profesionales cerca de ${metro.name}`,
@@ -937,10 +991,11 @@ function renderBusiness(ctx, b) {
     '@context': 'https://schema.org', '@type': BIZ_TYPE[topCat && topCat.slug] || 'LocalBusiness', '@id': profileUrl + '#business',
     name: b.name, description: b.about || undefined, telephone: b.phone || undefined, url: b.website || profileUrl,
     mainEntityOfPage: profileUrl,
-    image: ogImg ? abs(ctx, ogImg) : undefined,
-    logo: bizLogo(b) ? abs(ctx, bizLogo(b)) : undefined,
-    address: { '@type': 'PostalAddress', streetAddress: b.address || undefined, addressLocality: b.district && b.district.kind === 'municipio' ? b.district.name : 'Madrid', addressRegion: 'Madrid', addressCountry: 'ES' },
-    areaServed: b.zone || 'Madrid',
+    image: absImg(ctx, ogImg),
+    logo: absImg(ctx, bizLogo(b)),
+    // Sin municipio conocido no inventamos localidad: solo región y país.
+    address: { '@type': 'PostalAddress', streetAddress: b.address || undefined, addressLocality: b.district ? (b.district.kind === 'municipio' ? b.district.name : 'Madrid') : undefined, addressRegion: 'Madrid', addressCountry: 'ES' },
+    areaServed: zoneText(b),
     numberOfEmployees: b.team_size ? { '@type': 'QuantitativeValue', value: b.team_size } : undefined,
   };
 
@@ -953,7 +1008,7 @@ function renderBusiness(ctx, b) {
     if (others.length) {
       const allHref = rel.total >= MIN_LISTING ? `/${primary.slug}/${b.district.slug}` : `/${primary.slug}`;
       related = `<section class="biz-related">
-          <div class="section-head"><h2>Otros ${esc(primary.name.toLowerCase())} en ${esc(b.district.name)}</h2><a class="section-link" href="${attr(allHref)}">Ver todos ${icon('arrow')}</a></div>
+          <div class="section-head"><h2>${PLURAL_PRO.has(primary.slug) ? 'Otros' : 'Otras'} ${esc(proNoun(primary))} en ${esc(b.district.name)}</h2><a class="section-link" href="${attr(allHref)}">Ver todos ${icon('arrow')}</a></div>
           ${grid(ctx, others)}
         </section>`;
     }
@@ -969,13 +1024,13 @@ function renderBusiness(ctx, b) {
       <article class="biz">
         <div class="biz-media">
           ${b.featured ? sponsoredBadge() : ''}
-          <img src="${attr(bizCover(b))}" alt="${attr(b.name)}" />
+          ${bizCoverHtml(b)}
         </div>
         <div class="biz-head">
           ${bizLogo(b) ? `<span class="biz-logo"><img src="${attr(bizLogo(b))}" alt="${attr(b.name)} logo" /></span>` : ''}
           <h1>${esc(b.name)}</h1>
           ${b.claimed ? verifiedBadge() : ''}
-          <p class="biz-zone">${icon('pin')}${esc(b.address || b.zone || 'Madrid')}</p>
+          <p class="biz-zone">${icon('pin')}${esc(b.address || zoneText(b))}</p>
           ${b.rating ? `<p class="biz-rating">${icon('star')}<b>${b.rating.toFixed(1)}</b> · ${reviewsLabel(b.reviews || 0)} en Google</p>`
             : b.reviews ? `<p class="biz-rating">${icon('star')}<b>${reviewsLabel(b.reviews)}</b> en Google</p>` : ''}
           ${facts.length ? `<p class="biz-facts">${facts.join('')}</p>` : ''}
@@ -1018,9 +1073,9 @@ function renderBusiness(ctx, b) {
     </div>`;
 
   return renderLayout(ctx, {
-    title: `${b.name} — ${primary ? primary.name : 'Servicios'} en ${b.zone || 'Madrid'} | ${SITE.name}`,
-    description: (b.about ? b.about.slice(0, 155) : `${b.name}: ${primary ? primary.name.toLowerCase() : 'servicios'} en ${b.zone || 'Madrid'}. Contacto directo y presupuesto gratis.`),
-    canonical: profileUrl, ogType: 'business.business', ogImage: ogImg ? abs(ctx, ogImg) : undefined,
+    title: `${b.name} — ${primary ? primary.name : 'Servicios'} en ${b.zone || 'la Comunidad de Madrid'} | ${SITE.name}`,
+    description: (b.about ? b.about.slice(0, 155) : `${b.name}: ${primary ? primary.name.toLowerCase() : 'servicios'} en ${b.zone || 'la Comunidad de Madrid'}. Contacto directo y presupuesto gratis.`),
+    canonical: profileUrl, ogType: 'business.business', ogImage: absImg(ctx, ogImg),
     // Fichas sin contenido propio: visibles, pero fuera de Google hasta que se
     // reclamen o tengan descripción (ver DB.isIndexableBusiness).
     robots: DB.isIndexableBusiness(b) ? undefined : 'noindex,follow',
@@ -1033,7 +1088,6 @@ function renderBusiness(ctx, b) {
 /* --------------------------- Home / Search --------------------------- */
 function renderHome(ctx) {
   const cats = DB.getCategoryTree();
-  const districts = DB.listDistricts();
   const distritos = DB.listDistritos();
   const zones = DB.listZones();
   const metros = DB.listMetros();
@@ -1045,11 +1099,10 @@ function renderHome(ctx) {
   const featList = feat.items;
   const total = DB.countBusinesses();
 
-  const inlineData = {
-    categories: cats.map(c => ({ slug: c.slug, name: c.name })),
-    districts: districts.map(d => ({ slug: d.slug, name: d.name, kind: d.kind, barrios: DB.listNeighborhoods(d.id).map(b => ({ slug: b.slug, name: b.name })) })),
-    metros: showMetro ? metros.map(m => ({ slug: m.slug, name: m.name })) : [],
-  };
+  // Barrios: NO van inline (eran ~27 KB en cada carga de la portada). La opción
+  // lleva data-id solo si el lugar tiene barrios; site.js los pide al elegirlo.
+  const withBarrios = new Set(DB.listNeighborhoods().map(n => n.district_id));
+  const placeOpt = d => `<option value="${attr(d.slug)}"${withBarrios.has(d.id) ? ` data-id="${d.id}"` : ''}${d.kind === 'municipio' ? ' data-m="1"' : ''}>${esc(d.name)}</option>`;
 
   // Solo lugares con empresas suficientes, ordenados por número de empresas.
   const withCount = list => list.map(d => Object.assign({}, d, { n: covCount('muni', d.slug) }))
@@ -1075,7 +1128,7 @@ function renderHome(ctx) {
           </div>
           <div class="hs-field">
             <label>Zona</label>
-            <select id="hsDistrict"><option value="">Toda la Comunidad</option><optgroup label="Madrid capital">${distritos.map(d => `<option value="${attr(d.slug)}">${esc(d.name)}</option>`).join('')}</optgroup>${zones.map(z => `<optgroup label="${attr(z.name)}">${z.municipios.map(m => `<option value="${attr(m.slug)}">${esc(m.name)}</option>`).join('')}</optgroup>`).join('')}</select>
+            <select id="hsDistrict"><option value="">Toda la Comunidad</option><optgroup label="Madrid capital">${distritos.map(placeOpt).join('')}</optgroup>${zones.map(z => `<optgroup label="${attr(z.name)}">${z.municipios.map(placeOpt).join('')}</optgroup>`).join('')}</select>
           </div>
           <div class="hs-field">
             <label>Barrio</label>
@@ -1093,7 +1146,7 @@ function renderHome(ctx) {
           <button class="btn btn-primary" type="submit">Buscar</button>
         </form>
         <div class="hero-stats">
-          <div><b>${total}</b><span>Empresas</span></div>
+          <div><b>${fmtInt(total)}</b><span>Empresas</span></div>
           <div><b>${DB.listMunicipios().length + 1}</b><span>Municipios</span></div>
           <div><b>${cats.length}</b><span>Servicios</span></div>
         </div>
@@ -1134,7 +1187,11 @@ function renderHome(ctx) {
   return renderLayout(ctx, {
     title: `${SITE.name}: fontaneros, electricistas, cerrajeros, reformas y más`,
     description: `Encuentra ${servicesPhrase(5)} en Madrid capital y los 179 municipios de la Comunidad. Contacto directo y presupuesto gratis.`,
-    canonical: abs(ctx, '/'), bodyClass: 'page-home', body, inlineData,
+    canonical: abs(ctx, '/'), bodyClass: 'page-home', body,
+    // La foto del hero es el LCP de la portada: se precarga (es un fondo CSS, el
+    // navegador no la descubriría hasta aplicar la hoja de estilos).
+    headExtra: '<link rel="preload" as="image" type="image/webp" href="/assets/img/hero-madrid-900.webp" media="(max-width: 900px)" fetchpriority="high">'
+      + '<link rel="preload" as="image" type="image/webp" href="/assets/img/hero-madrid.webp" media="(min-width: 901px)" fetchpriority="high">',
     jsonLd: [{ '@context': 'https://schema.org', '@type': 'WebSite', '@id': abs(ctx, '/#website'), name: SITE.name, url: abs(ctx, '/'), inLanguage: 'es-ES', publisher: { '@id': abs(ctx, '/#organization') } }],
   });
 }
@@ -1171,7 +1228,8 @@ function renderSearch(ctx, q, page) {
 /* Pagina publică `/destacadas`: lista curată „home" (membership), paginată 20/pagină. */
 function renderDestacadas(ctx, page) {
   let r = DB.listHome({ page });
-  if (r.total === 0) r = DB.listForContext('home', {}, { page }); // fallback: toate, shuffle „home"
+  const curated = r.total > 0;
+  if (!curated) r = DB.listForContext('home', {}, { page }); // fallback: toate, shuffle „home"
   const cats = DB.getCategoryTree();
   const related = [chipRow('Explora por servicio', cats.map(c => ({ name: c.name, href: `/${c.slug}` })))];
   return listingPage(ctx, {
@@ -1184,6 +1242,9 @@ function renderDestacadas(ctx, page) {
     businesses: r.items, total: r.total,
     pagination: { page: r.page, pages: r.pages, baseHref: '/destacadas' },
     related,
+    // Sin selección manual es una mezcla aleatoria de TODO el directorio (cientos de
+    // páginas que duplican los listados) → fuera de Google. Igual que el sitemap.
+    robots: curated && r.total >= MIN_LISTING ? undefined : 'noindex,follow',
     emptyMsg: 'Aún no hay empresas destacadas seleccionadas.',
   });
 }
@@ -1191,6 +1252,9 @@ function renderDestacadas(ctx, page) {
 /* ----------------------------- Páginas legales ----------------------- */
 /* Datos del titular. El CUI (código fiscal) se puede fijar por .env
    (LEGAL_NIF); si está vacío, simplemente no se muestra. */
+/* Fecha real del último cambio de los textos legales (antes salía «hoy» a diario).
+   Actualízala cuando cambies cualquiera de los documentos de legalDocs(). */
+const LEGAL_UPDATED = '2026-10-02';
 const LEGAL_ENTITY = {
   razon: process.env.LEGAL_RAZON || 'Refluxe Loial SRL',
   nif: process.env.LEGAL_NIF || '49608691',
@@ -1259,7 +1323,7 @@ function renderLegal(ctx, slug) {
   const body = `<div class="container">
       ${breadcrumb(ctx, [{ name: 'Inicio', href: '/' }, { name: doc.h1 }])}
       <article class="legal">
-        <header class="page-head"><h1>${esc(doc.h1)}</h1><p class="page-count">Última actualización: ${new Date().toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' })}</p></header>
+        <header class="page-head"><h1>${esc(doc.h1)}</h1><p class="page-count">Última actualización: ${esc(new Date(LEGAL_UPDATED + 'T12:00:00Z').toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' }))}</p></header>
         ${doc.sections.map(([h, html]) => `<section class="legal-section"><h2>${esc(h)}</h2>${html}</section>`).join('')}
         <p class="legal-links">Consulta también: <a href="/aviso-legal">Aviso legal</a> · <a href="/privacidad">Política de privacidad</a> · <a href="/cookies">Política de cookies</a> · <a href="/condiciones">Condiciones de uso</a></p>
       </article>
@@ -1278,7 +1342,7 @@ function render404(ctx, message) {
       <p><a class="btn btn-primary" href="/">Volver al inicio</a></p>
       ${chipRow('Servicios', DB.getCategoryTree().map(c => ({ name: c.name, href: `/${c.slug}` })))}
     </div></div>`;
-  return renderLayout(ctx, { title: `Página no encontrada | ${SITE.name}`, description: '', canonical: abs(ctx, ctx.path || '/'), body });
+  return renderLayout(ctx, { title: `Página no encontrada | ${SITE.name}`, description: '', canonical: abs(ctx, ctx.path || '/'), robots: 'noindex,follow', body });
 }
 
 function render500(ctx) {
@@ -1334,13 +1398,13 @@ function renderStoryBody(md, opts) {
 function storyWords(st) { return String(st.body || '').split(/\s+/).filter(Boolean).length; }
 function storyBiz(st) { return st.business_id ? DB.getBusiness(st.business_id) : null; }
 function storyPrimaryCat(b) { return b ? ((b.categories || []).find(c => !c.parent_id) || (b.categories || [])[0] || null) : null; }
-function storyCover(st, b) { return st.cover || (st.photos && st.photos[0]) || svgPlaceholder(b ? b.name : st.title, 'Historia'); }
+function storyCover(st) { return st.cover || (st.photos && st.photos[0]) || null; }
 function storyCard(ctx, st) {
   const b = storyBiz(st);
   const cat = storyPrimaryCat(b);
   const href = '/historias/' + attr(st.id);
   return `<article class="story-card">
-      <a class="story-media" href="${href}"><img src="${attr(storyCover(st, b))}" alt="${attr(st.title)}" loading="lazy" /></a>
+      <a class="story-media" href="${href}">${storyCover(st) ? `<img src="${attr(storyCover(st))}" alt="${attr(st.title)}" loading="lazy" />` : placeholder(b ? b.name : st.title, 'Historia')}</a>
       <div class="story-body">
         <span class="story-kicker">Historia${cat ? ' · ' + esc(cat.name) : ''}${st.sponsored ? ' · Patrocinado' : ''}</span>
         <h3><a href="${href}">${esc(st.title)}</a></h3>
@@ -1408,16 +1472,16 @@ function renderStory(ctx, st) {
         <span class="story-biz-label">Sobre el negocio</span>
         <b class="story-biz-name">${esc(b.name)}</b>
         ${b.claimed ? verifiedBadge() : ''}
-        <span class="story-biz-zone">${icon('pin')}${esc(b.zone || 'Madrid')}</span>
+        <span class="story-biz-zone">${icon('pin')}${esc(zoneText(b))}</span>
         <div class="story-biz-actions">
           <a class="btn btn-primary btn-sm" href="/negocio/${attr(b.id)}">Ver ficha</a>
           ${b.website ? `<a class="btn btn-ghost btn-sm" href="${attr(b.website)}" target="_blank" rel="${siteRel}">Visitar web</a>` : ''}
         </div>
-        ${cat && b.district && covCount('catMun', cat.slug + '|' + b.district.slug) >= MIN_LISTING ? `<a class="story-biz-more" href="/${attr(cat.slug)}/${attr(b.district.slug)}">Más ${esc(cat.name.toLowerCase())} en ${esc(b.district.name)}</a>` : ''}
+        ${cat && b.district && covCount('catMun', cat.slug + '|' + b.district.slug) >= MIN_LISTING ? `<a class="story-biz-more" href="/${attr(cat.slug)}/${attr(b.district.slug)}">Más ${esc(proNoun(cat))} en ${esc(b.district.name)}</a>` : ''}
       </aside>` : '';
   const jsonLd = {
     '@context': 'https://schema.org', '@type': 'Article', headline: st.title.slice(0, 110), description: st.excerpt || undefined,
-    image: abs(ctx, st.cover && !st.cover.startsWith('data:') ? st.cover : '/assets/img/og-profesionales-madrid.jpg'),
+    image: absImg(ctx, st.cover) || abs(ctx, '/assets/img/og-profesionales-madrid.jpg'),
     datePublished: new Date((st.published_at || st.created_at) * 1000).toISOString(),
     dateModified: new Date((st.updated_at || st.published_at || st.created_at) * 1000).toISOString(),
     author: STORY_AUTHOR(ctx), publisher: { '@id': abs(ctx, '/#organization') }, mainEntityOfPage: url,
@@ -1435,7 +1499,7 @@ function renderStory(ctx, st) {
         </header>
         <div class="story-layout">
           <div class="story-main">
-            ${st.cover || gallery.length ? `<figure class="story-cover"><img src="${attr(storyCover(st, b))}" alt="${attr(st.title)}" /></figure>` : ''}
+            ${st.cover || gallery.length ? `<figure class="story-cover"><img src="${attr(storyCover(st))}" alt="${attr(st.title)}" /></figure>` : ''}
             <div class="story-content">${renderStoryBody(st.body, { website: b && b.website, sponsored: st.sponsored })}</div>
             ${gallery.length > (st.cover ? 0 : 1) ? `<section class="story-gallery">${gallery.slice(st.cover ? 0 : 1).map(src => `<a href="${attr(src)}" target="_blank" rel="noopener"><img src="${attr(src)}" alt="${attr((b ? b.name : st.title) + ' — trabajo')}" loading="lazy" /></a>`).join('')}</section>` : ''}
           </div>
@@ -1452,7 +1516,7 @@ function renderStory(ctx, st) {
     title: `${st.title} | ${SITE.name}`,
     description: (st.excerpt || st.title).slice(0, 160),
     canonical: url, ogType: 'article',
-    ogImage: st.cover && !st.cover.startsWith('data:') ? abs(ctx, st.cover) : undefined,
+    ogImage: absImg(ctx, st.cover),
     bodyClass: 'page-story', body,
     jsonLd: [jsonLdBreadcrumb(ctx, crumbs), jsonLd],
   });
@@ -1510,8 +1574,8 @@ function renderPrecio(ctx, pr) {
             ${faqSection('Preguntas frecuentes', pr.faq)}
           </div>
           <aside class="content-side">
-            ${leadForm({ context: pr.h1, compact: true, title: 'Pide presupuesto gratis', sub: `Te ponemos en contacto con ${cat ? esc(cat.name.toLowerCase()) : 'profesionales'} de tu zona, sin compromiso.` })}
-            ${cat ? `<div class="content-links"><h3>${esc(cat.name)} en Madrid</h3><p><a href="/${attr(cat.slug)}">Ver todos los ${esc(cat.name.toLowerCase())} del directorio</a></p>${places.length ? `<div class="chips">${places.map(x => `<a class="chip" href="${attr(x.href)}">${esc(x.name)} <b>${x.count}</b></a>`).join('')}</div>` : ''}</div>` : ''}
+            ${leadForm({ context: pr.h1, compact: true, title: 'Pide presupuesto gratis', sub: `Te ponemos en contacto con ${cat ? esc(proNoun(cat)) : 'profesionales'} de tu zona, sin compromiso.` })}
+            ${cat ? `<div class="content-links"><h3>${esc(cat.name)} en Madrid</h3><p><a href="/${attr(cat.slug)}">Ver ${esc(proNoun(cat))} del directorio</a></p>${places.length ? `<div class="chips">${places.map(x => `<a class="chip" href="${attr(x.href)}">${esc(x.name)} <b>${x.count}</b></a>`).join('')}</div>` : ''}</div>` : ''}
             ${guideLinks(pr.guias)}
           </aside>
         </div>
@@ -1555,7 +1619,7 @@ function renderGuia(ctx, g) {
           </div>
           <aside class="content-side">
             ${cat ? leadForm({ context: g.h1, compact: true, title: `¿Necesitas ${esc(cat.name.toLowerCase())}?`, sub: 'Pide presupuesto gratis a profesionales de tu zona.' }) : ''}
-            ${cat ? `<div class="content-links"><h3>${esc(cat.name)} en Madrid</h3><p><a href="/${attr(cat.slug)}">Ver ${esc(cat.name.toLowerCase())} del directorio</a></p>${c && precioBySlug(c.precio) ? `<p><a href="/precios/${attr(c.precio)}">Precios orientativos</a></p>` : ''}</div>` : ''}
+            ${cat ? `<div class="content-links"><h3>${esc(cat.name)} en Madrid</h3><p><a href="/${attr(cat.slug)}">Ver ${esc(proNoun(cat))} del directorio</a></p>${c && precioBySlug(c.precio) ? `<p><a href="/precios/${attr(c.precio)}">Precios orientativos</a></p>` : ''}</div>` : ''}
           </aside>
         </div>
       </article>
@@ -1603,7 +1667,7 @@ function claimResults(query) {
   const found = DB.searchBusinessesForClaim(query, 20);
   if (!found.length) return `<div class="empty"><p>No encontramos «${esc(query)}» en el directorio.</p><p class="empty-sub">Prueba con el teléfono de la ficha o <a href="#alta">date de alta gratis</a>.</p></div>`;
   return `<ul class="pro-results">${found.map(b => `<li>
-      <div><b>${esc(b.name)}</b><span>${esc(b.zone || 'Madrid')}${(b.categories || []).length ? ' · ' + esc(b.categories.map(c => c.name).join(', ')) : ''}</span></div>
+      <div><b>${esc(b.name)}</b><span>${esc(zoneText(b))}${(b.categories || []).length ? ' · ' + esc(b.categories.map(c => c.name).join(', ')) : ''}</span></div>
       ${b.claimed ? verifiedBadge() : `<a class="btn btn-primary btn-sm" href="/negocio/${attr(b.id)}#reclamar">Reclamar esta ficha</a>`}
     </li>`).join('')}</ul>`;
 }
@@ -1704,7 +1768,7 @@ function renderProfesionalesCategoria(ctx, cat) {
         <p class="hero-eyebrow">Para ${esc(cat.name.toLowerCase())}</p>
         <h1>${esc(h1)}</h1>
         ${c ? `<p class="pro-lead">${esc(c.lead)}</p>` : ''}
-        <p class="pro-stat">En el directorio hay <b>${fmtInt(n)}</b> ${esc(cat.name.toLowerCase())} de la Comunidad de Madrid. <a href="/${attr(cat.slug)}">Mira cómo los ve el cliente</a>.</p>
+        <p class="pro-stat">En el directorio hay <b>${fmtInt(n)}</b> ${esc(proNoun(cat))} de la Comunidad de Madrid. <a href="/${attr(cat.slug)}">Mira cómo los ve el cliente</a>.</p>
         <div class="pro-ctas"><a class="btn btn-primary" href="#buscar-ficha">Buscar mi ficha</a><a class="btn btn-ghost" href="#alta">Alta nueva</a></div>
         ${proContact(`Hola, tengo un negocio de ${cat.name.toLowerCase()} y quiero aparecer en Profesionales Madrid.`)}
       </div>
@@ -1713,8 +1777,8 @@ function renderProfesionalesCategoria(ctx, cat) {
       <div class="section-head"><h2>Qué mira el cliente antes de llamarte</h2></div>
       <div class="benefits benefits-3">${c.puntos.map(x => `<div class="benefit"><b>${esc(x.t)}</b><span>${esc(x.d)}</span></div>`).join('')}</div>
     </section>` : ''}
-    ${top.length ? `<section class="container section">${chipRow(`Dónde hay más ${cat.name.toLowerCase()} en el directorio`, top)}</section>` : ''}
-    ${proSearchBlock('', `¿Ya apareces entre los ${cat.name.toLowerCase()}? Búscate`)}
+    ${top.length ? `<section class="container section">${chipRow(`Dónde hay más ${proNoun(cat)} en el directorio`, top)}</section>` : ''}
+    ${proSearchBlock('', `¿Ya apareces en el directorio de ${cat.name.toLowerCase()}? Búscate`)}
     <section class="container section" id="alta">
       <div class="pro-split">
         <div><h2>Alta nueva</h2><p>¿Tu negocio no aparece? Déjanos tus datos y lo publicamos. Te llamamos antes para completar la ficha contigo.</p></div>

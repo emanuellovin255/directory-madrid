@@ -28,6 +28,10 @@ function districtZona(slug) { return MUNI_ZONA.get(slug) || null; }
 const HAS_PG = !!process.env.DATABASE_URL;
 const IN_MEMORY = HAS_PG || !!process.env.VERCEL;
 const DB_PATH = IN_MEMORY ? ':memory:' : (process.env.DB_PATH || path.join(__dirname, 'data.db'));
+/* Estadísticas propias (visitas/vistas/clics en `events`): solo tienen sentido con
+   SQLite en disco. En Vercel/Supabase la tabla vive en memoria por instancia → se
+   perdían y cada página hacía 2 llamadas extra al servidor. Allí: Plausible/GA4. */
+const INTERNAL_STATS = !IN_MEMORY;
 
 const db = new DatabaseSync(DB_PATH);
 db.exec('PRAGMA foreign_keys = ON;');
@@ -425,7 +429,20 @@ function parseBusinessRow(r) {
 }
 /* Eticheta de zonă afișată: barrio · distrito, altfel zona liberă (urbanización) ·
    municipio, altfel doar zona liberă (lead fără municipio). */
+/* Etiquetas del scraper que existen en cualquier pueblo («Pueblo», «Casco Antiguo»…):
+   sin municipio no dicen dónde está el negocio → no se muestran. */
+const GENERIC_AREAS = new Set([
+  'centro', 'pueblo', 'casco-antiguo', 'casco-historico', 'zona-centro', 'zona-pueblo',
+  'norte', 'sur', 'este', 'oeste', 'zona-norte', 'zona-sur', 'zona-este', 'zona-oeste', 'golf',
+  'parque-empresarial', 'poligono-industrial', 'urbanizacion-la-serna',
+  'el-rincon', 'la-fuente', 'los-robles', 'los-pinos', 'las-colinas', 'los-cerezos',
+  // Lugares de fuera de la Comunidad (scripts/prune-outside.js): si queda alguno con
+  // fijo de Madrid, la etiqueta es la del buscador del scraper, no la del negocio.
+  'guadalajara', 'isla-de-valdecanas', 'hoyos-del-espino', 'algora', 'ciudad-ducal',
+  'san-rafael', 'los-angeles-de-san-rafael', 'ventas-de-retamosa',
+]);
 function zoneLabel(area, district, neighborhood) {
+  if (area && !district && GENERIC_AREAS.has(slugify(area))) area = '';
   const a = area && (!district || slugify(area) !== district.slug) ? area : '';
   if (neighborhood) return neighborhood.name + (district ? ' · ' + district.name : '');
   if (district) return a ? a + ' · ' + district.name : district.name;
@@ -958,16 +975,20 @@ function paginate(items, page, pageSize) {
    Invalidare simplă: un contor `_dataVersion` incrementat la ORICE scriere. */
 let _dataVersion = 0;
 function bumpDataVersion() { _dataVersion++; }
-const _orderCache = new Map();        // context -> { ids:[], v }
+const _orderCache = new Map();        // context+filtru -> { ids:[], v }
 const ORDER_CACHE_MAX = 300;
 function orderedIdsForContext(context, baseFilter) {
-  const hit = _orderCache.get(context);
+  // Cheia include filtrul: barrio-ul folosește contextul (ordinea) municipiului,
+  // dar cu alt filtru → fără asta, district și barrio își suprascriau lista.
+  const f = baseFilter || {};
+  const key = context + '\u0000' + JSON.stringify(Object.keys(f).sort().map(k => [k, f[k]]));
+  const hit = _orderCache.get(key);
   if (hit && hit.v === _dataVersion) return hit.ids;
-  const ids = orderByContext(listBusinessesLight(baseFilter || {}), context).map(b => b.id);
-  if (_orderCache.size >= ORDER_CACHE_MAX && !_orderCache.has(context)) {
+  const ids = orderByContext(listBusinessesLight(f), context).map(b => b.id);
+  if (_orderCache.size >= ORDER_CACHE_MAX && !_orderCache.has(key)) {
     _orderCache.delete(_orderCache.keys().next().value);   // FIFO: scoate cel mai vechi
   }
-  _orderCache.set(context, { ids, v: _dataVersion });
+  _orderCache.set(key, { ids, v: _dataVersion });
   return ids;
 }
 /* Listare ordonată pe context + paginare. Ordinea vine din cache (id-uri),
@@ -1246,7 +1267,7 @@ async function persistPlacements(context) {
 }
 
 module.exports = {
-  db, DAYS, slugify, now,
+  db, DAYS, slugify, now, INTERNAL_STATS,
   initPersistence, persist, persistTaxonomy, persistenceEnabled, refreshIfStale,
   persistBusiness, persistBusinessDelete, persistCategory, persistCategoryDelete,
   persistMetro, persistMetroDelete, persistNeighborhood, persistPlacements, persistStory, persistStoryDelete,

@@ -64,7 +64,11 @@ Pe fiecare fișă nerevendicată apare blocul „¿Es tu negocio?”. Cererea aj
 node scripts/export-profiles.js --sin-verificar --min-resenas=20 > fichas.csv   # CSV cu URL-ul fiecărei fișe (pentru GHL)
 node scripts/enrich-from-web.js --limit=50              # simulare: adresă/orar/rețele din site-ul firmei
 node scripts/enrich-from-web.js --limit=50 --apply      # salvează
+node scripts/prune-outside.js                           # simulare: firmele din afara Comunității Madrid
+node scripts/prune-outside.js --apply                   # le șterge (backup automat; cu DATABASE_URL → Supabase)
 ```
+
+`prune-outside.js`: scraper-ul leadurilor potrivește nume de locuri „după ureche” („Salamanca” orașul → districtul Salamanca, „La Acebeda” → firme din Jaén). Se scot: telefon fix din altă provincie (91/81 = Madrid), mobil cu etichetă de zonă din afara Comunității, mobil într-o zonă unde majoritatea fixelor sunt din altă provincie. `import-leads.js` aplică aceeași regulă, deci un reimport nu le mai aduce înapoi.
 
 Căutarea din hero (serviciu + distrito + barrio + metrou) **rutează direct** la pagina SEO corespunzătoare.
 

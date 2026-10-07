@@ -56,6 +56,11 @@ almacén durable; en local sin Supabase → SQLite en disco (`server/data.db`).
 - [x] **Imágenes en Supabase Storage** (`SUPABASE_URL` + `SUPABASE_SERVICE_KEY`).
 - [x] Scripts: `export-profiles.js` (CSV para GHL), `enrich-from-web.js` (dirección/horario/redes desde su web).
 
+- [x] **Calidad de datos**: `scripts/prune-outside.js` quita negocios de fuera de la Comunidad (fijo de otra provincia, etiqueta de fuera, zona con mayoría de fijos de fuera); `import-leads.js` aplica la misma regla. Etiquetas genéricas sin municipio («Pueblo», «Casco Antiguo») ya no se muestran.
+- [x] **Contenido local de municipios** (`content/municipios.js`, 30 municipios) en servicio×municipio y `/zona/<municipio>`.
+- [x] **SEO técnico**: title/description con el nº real de empresas; `?page=` inexistente → 404; `/destacadas` noindex sin selección manual; JSON-LD escapado (`<` → `\u003c`); og:image correcta con Storage; hero WebP precargado; barrios del buscador bajo demanda; placeholders CSS.
+- [x] **Analítica**: en producción sin estadísticas propias (ni llamadas ni cookie); clics de llamada/web como eventos `click_phone`/`click_web` en Plausible/GA4.
+
 ## Próximos pasos (ideas)
 - Almacenar imágenes en object storage/CDN (hoy inline base64 en Postgres) con WebP + `srcset`.
 - Contenido local único por municipio/barrio para que más páginas superen el umbral de indexación.
